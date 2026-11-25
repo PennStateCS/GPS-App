@@ -66,8 +66,12 @@ object ReceiverModule {
             appScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, app.surrealar.settings.model.ExternalReceiverProfile.DEFAULT)
         val output = settings.compensatedNmeaOutput.stateIn(
             appScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, app.surrealar.settings.model.CompensatedOutputSetting.DEFAULT)
-        val firmware = receiverDevices.deviceInfo.map { it?.firmware }.stateIn(
-            appScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, null)
+        // Last known firmware per receiver host + profile: a failed 30 s device-info poll (firmware = null) must not
+        // make pole-tip epochs "firmware unknown" (FirmwareMemory).
+        val firmwareMemory = app.surrealar.receiver.tilt.FirmwareMemory()
+        val firmware = kotlinx.coroutines.flow.combine(receiverDevices.deviceInfo, profile) { info, p ->
+            firmwareMemory.update(info, p)
+        }.stateIn(appScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, null)
         return app.surrealar.receiver.tilt.ReceiverTiltMonitor(
             scope = appScope,
             profile = profile,

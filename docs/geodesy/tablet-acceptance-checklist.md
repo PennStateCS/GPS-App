@@ -201,6 +201,16 @@ unit tests (named), D = device check.
 | 11.23 | Export a report after 11.8–11.10 | survey-context.txt lists receiver model / connection type, source and profile, receiver frame, compensated output, firmware, coordinate epoch, fix type, correction age, h/v accuracy, sats/DOP, sentence counts incl. ETC rate, tilt state + freshness, pole height / PCO, position reference, interruption counts + last reason, horizontal / vertical systems + beta flag, geoid model + version + load state, transformation paths, grid failures | — | A (`SurveyContextCollectorTest`, `ReportAssemblerTest`) + D |
 | 11.24 | Search the exported ZIP for the receiver IP, NTRIP user/password, lat/lon of the captured points | None present in survey-context.txt (fix shown by quality only) | — | A (`SurveyContextCollectorTest` redaction) + D |
 
+**Review follow-ups** (see rs4-pro-tilt.md "Phase 4 WP C review follow-ups")
+
+| # | Check | Expected result | Needs | A/D |
+|---|---|---|---|---|
+| 11.25 | RS4 Pro, output Enabled, tilt active: run a 60 s capture on weak Wi-Fi (walk to the edge of range) | Occasional excluded epochs only; the capture keeps accepting epochs at the stream rate after the link recovers (no growing lag, no "tilt compensation was lost") | H | A (`droppedEtcs_doNotCascade…`, `alreadyLateFix_neverWaits`) + D |
+| 11.26 | Same, while the receiver's web service misses a device-info poll (e.g. 30–60 s of weak Wi-Fi) | Firmware stays shown; the pole-tip capture is not stopped; if it ever is, the message is "the receiver firmware could not be confirmed …", never a tilt-loss message | H | A (`FirmwareMemoryTest`, `firmwareUnknownMidOccupation…`) + D |
+| 11.27 | RS2+ capture with NTRIP where the GGA station id briefly reads empty / 0000 or flickers to another id for 1–2 epochs | Capture continues (flicker epochs not averaged, logged as transient); switching the mount to another base still stops it after ≈ 3 epochs / 1 s | — (RTK base/NTRIP) | A (`rs2Plus_…StationId…`, `rs2Plus_realBaseChange_stillStops`) + D |
+| 11.28 | RS4 / RS4 Pro profile, "Compensated NMEA output" Unknown: start a capture | Dialog shows "⚠ RS4: set 'Compensated NMEA output' in Settings → Receiver — if Emlid Flow streams compensated positions, heights would be reduced twice." for the whole occupation (no dismiss); saving still allowed (antenna reduction); captures.log has "Capture saved with unconfirmed position reference id=…". Not shown for RS2+ / Generic or with Enabled / Disabled | — (RS4 profile, any receiver) | A (`outputUnknownWarning_onlyForRs4AndRs4Pro…`) + D |
+| 11.29 | Mock location / AR with tilt active and output Enabled | Injected location has neither altitude nor vertical accuracy | H | A (`omitted altitude also omits the vertical accuracy`) + D |
+
 ## Verified only on the device (not by unit tests)
 Real screen layout/themes; the real migration of this device's database; RS2+ TCP behaviour; AR placement;
 offline first-load timing of the geoid packs; Android save/open (SAF) dialogs; capture interruption UX;

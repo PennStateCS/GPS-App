@@ -248,8 +248,10 @@ object GnssModule {
                 ProviderChoice.REPLAY       to replayAdapter,
             ),
             // Non-internal fixes: FixDatumNormalizer.toWgs84 with the current receiver datum (unchanged
-            // maths), recording the datum used per fix.
-            fixTransform   = feedDatum::normalise,
+            // maths), recording the datum used per fix. The tilt monitor then notes each published fix's arrival
+            // time (identity-keyed, status only; the fix is returned unchanged) so ETC pairing never depends on
+            // when a subscriber gets round to processing it.
+            fixTransform   = { fix -> tiltMonitor.recordArrival(feedDatum.normalise(fix)) },
         ).also {
             it.start()
             // Tilt status: interpret each external fix; forget ETC state when the link reconnects.

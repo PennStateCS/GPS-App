@@ -90,6 +90,28 @@ object PositionReferencePolicy {
         return EpochClassification(ref, r, tilt)
     }
 
+    /**
+     * [evaluate] when the receiver profile could not be read (the capture's start snapshot failed): treated as an
+     * IMU-capable receiver (geokit model unknown) with "Compensated NMEA output" UNKNOWN — the same conservative
+     * rules as an RS4 / RS4 Pro with the setting Unknown. Never [EpochReference.POLE_TIP] (that needs the output
+     * declared ENABLED); possibly compensated when the ETC shows the tilt engine on; otherwise antenna (uncertain),
+     * i.e. today's maths.
+     */
+    fun evaluateUnknownProfile(firmware: String?, tilt: EmlidTiltAssociation, recentTiltOn: Boolean): EpochClassification {
+        val r = EmlidPositionReference.classify(null, CompensatedOutputSetting.UNKNOWN.toGeokit(), firmware, tilt)
+        return EpochClassification(mapUnknownOutput(r, tilt, recentTiltOn), r, tilt)
+    }
+
+    private fun mapUnknownOutput(r: EmlidPositionReference.Result, tilt: EmlidTiltAssociation, recentTiltOn: Boolean) =
+        when (r.reference) {
+            PositionReference.ANTENNA -> EpochReference.ANTENNA
+            // Unreachable with output UNKNOWN; mapped defensively to "may be compensated", never to a pole tip.
+            PositionReference.RECEIVER_COMPENSATED_POLE_TIP -> EpochReference.MAY_BE_COMPENSATED
+            PositionReference.UNKNOWN ->
+                if (r.mayBeCompensated || tiltEngineMayBeOn(tilt, recentTiltOn)) EpochReference.MAY_BE_COMPENSATED
+                else EpochReference.ANTENNA_UNCERTAIN
+        }
+
     private fun tiltEngineMayBeOn(tilt: EmlidTiltAssociation, recentTiltOn: Boolean): Boolean = when (tilt.match) {
         TiltMatch.MATCHED -> tilt.state != EmlidTiltState.OFF
         TiltMatch.NO_ETC_SEEN, TiltMatch.NO_FIX_TIME -> false

@@ -34,8 +34,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  * (checksum required), so geokit-gnss parsing and fusion are untouched.
  *
  * - [associate] pairs a fix with its own epoch's ETC (geokit rules: same UTC time-of-fix, received within 1 s;
- *   a stale ETC is never paired with a fresh fix). ETC follows its GGA in the stream, so it waits up to
- *   [etcWaitMs] for that ETC to arrive.
+ *   a stale ETC is never paired with a fresh fix). ETC follows its GGA in the stream, so it waits for that ETC
+ *   until at most [etcWaitMs] after the fix's *arrival* ([recordArrival]), never after its processing time.
  * - [classify] adds the profile / "Compensated NMEA output" / firmware interpretation ([PositionReferencePolicy]).
  * - [status] is the latest interpretation for the UI and diagnostics (Settings → Receiver, Developer page).
  *
@@ -117,15 +117,47 @@ class ReceiverTiltMonitor(
         refreshStatus()
     }
 
+    /** Arrival time ([clockMs]) per published fix instance, see [recordArrival]. */
+    private class Key(val fix: Fix) {
+        override fun equals(other: Any?) = other is Key && other.fix === fix
+        override fun hashCode() = System.identityHashCode(fix)
+    }
+    private val arrivals = object : LinkedHashMap<Key, Long>(ARRIVAL_CAPACITY * 2) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Key, Long>?) = size > ARRIVAL_CAPACITY
+    }
+
     /**
-     * The ETC association of an external [fix] seen at [seenAtMs] (clock of [clockMs]). Waits up to [etcWaitMs]
-     * while the fix's own ETC has not arrived yet (ETC follows its GGA); never pairs an older ETC.
+     * Records when [fix] arrived from the feed (the switchboard's fix transform calls this for every published
+     * fix, before any subscriber buffers or suspends). Returns [fix] unchanged; never throws.
+     *
+     * Why: the capture's filter chain and [observe] process fixes one after another and may wait for an ETC, so the
+     * time a fix is *processed* can trail its arrival. Pairing by processing time would make every later fix look
+     * later than its ETC (NOT_MATCHED, then another wait), a lag that never recovers. [associate] and [classify]
+     * use the arrival time instead.
      */
-    suspend fun associate(fix: Fix, seenAtMs: Long = clockMs()): EmlidTiltAssociation {
+    fun recordArrival(fix: Fix): Fix {
+        try {
+            val now = clockMs()
+            synchronized(arrivals) { arrivals[Key(fix)] = now }
+        } catch (_: Exception) { /* status only: never disturb the feed */ }
+        return fix
+    }
+
+    /** When [fix] arrived from the feed ([recordArrival]); null when not recorded (evicted, or not from the feed). */
+    fun arrivalOf(fix: Fix): Long? = synchronized(arrivals) { arrivals[Key(fix)] }
+
+    /**
+     * The ETC association of an external [fix] that arrived at [seenAtMs] (clock of [clockMs]; default: its
+     * recorded arrival, else now). While the fix's own ETC has not arrived yet (ETC follows its GGA) it waits until
+     * at most [seenAtMs] + [etcWaitMs]: a fix processed late never waits beyond that, so a dropped ETC costs at
+     * most one wait and never delays the fixes behind it. Never pairs an older ETC.
+     */
+    suspend fun associate(fix: Fix, seenAtMs: Long = arrivalOf(fix) ?: clockMs()): EmlidTiltAssociation {
         val tod = timeOfDaySeconds(fix)
         var a = tracker.associate(tod, seenAtMs)
         if (a.match == TiltMatch.NOT_MATCHED && etcWaitMs > 0) {
-            withTimeoutOrNull(etcWaitMs) {
+            val remaining = seenAtMs + etcWaitMs - clockMs()
+            if (remaining > 0) withTimeoutOrNull(remaining) {
                 etcArrivals.first {
                     a = tracker.associate(tod, seenAtMs)
                     a.match != TiltMatch.NOT_MATCHED
@@ -136,21 +168,46 @@ class ReceiverTiltMonitor(
     }
 
     /**
-     * Interprets [fix] with the given settings ([profile] / [output]; the live firmware). A non-RS4 profile is
-     * [EpochReference.NOT_APPLICABLE] at once, without waiting for an ETC.
+     * Interprets [fix] with the given settings ([profile] / [output]; [firmware], default the live firmware). A
+     * non-RS4 profile is [EpochReference.NOT_APPLICABLE] at once, without waiting for an ETC.
+     *
+     * @param profileKnown false when the receiver profile could not be read: the fix is then interpreted
+     *   conservatively as an IMU-capable receiver with the output setting UNKNOWN (never a pole tip; possibly
+     *   compensated when the ETC shows the tilt engine on), instead of being passed through untouched.
+     * @param waitOnlyWhenNeeded true (captures): do not wait for the epoch's ETC when its match cannot change the
+     *   reference (output DISABLED is the antenna whatever the ETC says). The status path keeps waiting so the
+     *   shown reason (e.g. "tilt off") is the epoch's own.
      */
     suspend fun classify(
         fix: Fix,
         profile: ExternalReceiverProfile? = this.profile.value,
         output: CompensatedOutputSetting = compensatedOutput.value,
-        seenAtMs: Long = clockMs(),
+        seenAtMs: Long = arrivalOf(fix) ?: clockMs(),
+        firmware: String? = this.firmware.value,
+        profileKnown: Boolean = true,
+        waitOnlyWhenNeeded: Boolean = false,
     ): EpochClassification {
-        if (fix.provider == Provider.INTERNAL || fix.provider == Provider.REPLAY || !PositionReferencePolicy.appliesTo(profile)) {
+        if (fix.provider == Provider.INTERNAL || fix.provider == Provider.REPLAY) {
             return EpochClassification(EpochReference.NOT_APPLICABLE, null, null)
         }
-        val tilt = associate(fix, seenAtMs)
-        return PositionReferencePolicy.evaluate(profile, output, firmware.value, tilt, recentTiltOn(seenAtMs))
+        if (profileKnown && !PositionReferencePolicy.appliesTo(profile)) {
+            return EpochClassification(EpochReference.NOT_APPLICABLE, null, null)
+        }
+        val effectiveOutput = if (profileKnown) output else CompensatedOutputSetting.UNKNOWN
+        val tilt = if (waitOnlyWhenNeeded && profileKnown && effectiveOutput == CompensatedOutputSetting.DISABLED) {
+            tracker.associate(timeOfDaySeconds(fix), seenAtMs)
+        } else {
+            associate(fix, seenAtMs)
+        }
+        return if (profileKnown) {
+            PositionReferencePolicy.evaluate(profile, effectiveOutput, firmware, tilt, recentTiltOn(seenAtMs))
+        } else {
+            PositionReferencePolicy.evaluateUnknownProfile(firmware, tilt, recentTiltOn(seenAtMs))
+        }
     }
+
+    /** The receiver firmware the rules use now (last known for this receiver; null = unknown). */
+    fun currentFirmware(): String? = firmware.value
 
     /** True when the stream is live and its latest ETC showed the tilt engine on (in any state). */
     fun recentTiltOn(nowMs: Long = clockMs()): Boolean =
@@ -164,7 +221,8 @@ class ReceiverTiltMonitor(
         scope.launch {
             fixes.collect { fix ->
                 if (fix.provider != Provider.EXTERNAL_TCP && fix.provider != Provider.EXTERNAL_BT) return@collect
-                val seen = clockMs()
+                // Arrival time (recorded by the feed before any buffering), not this collector's processing time.
+                val seen = arrivalOf(fix) ?: clockMs()
                 val c = classify(fix, seenAtMs = seen)
                 lastFixClassification = c
                 lastFixClassifiedAtMs = seen
@@ -225,6 +283,8 @@ class ReceiverTiltMonitor(
         /** A fix interpretation older than this is not shown as current. */
         const val FIX_STATUS_MAX_AGE_MS = 5_000L
         private const val RATE_WINDOW = 26
+        /** Fix arrival times remembered: twice the switchboard's 64-fix buffer (as ReceiverFeedDatum). */
+        const val ARRIVAL_CAPACITY = 128
         private const val DAY_MS = 86_400_000L
 
         /**

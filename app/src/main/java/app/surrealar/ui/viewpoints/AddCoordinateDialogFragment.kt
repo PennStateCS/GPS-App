@@ -326,15 +326,20 @@ class AddCoordinateDialogFragment(
             }
         }
 
-        // RS4 / RS4 Pro: which point the averaged positions are (antenna or the receiver's compensated pole tip).
+        // RS4 / RS4 Pro: which point the averaged positions are (antenna or the receiver's compensated pole tip),
+        // plus the occupation's standing warning (e.g. RS4 with "Compensated NMEA output" Unknown). The warning has
+        // no dismiss: it stays for the whole occupation and the completed result.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                captureVm.positionReference.collect { ref ->
-                    setOptionalText(tvPositionReference, ref?.let {
-                        "Position: ${app.surrealar.receiver.tilt.TiltStatusText.referenceLabel(it)}. " +
-                            app.surrealar.receiver.tilt.TiltStatusText.referenceExplanation(it, null)
-                    })
-                }
+                kotlinx.coroutines.flow.combine(captureVm.positionReference, captureVm.referenceWarning) { ref, warning ->
+                    listOfNotNull(
+                        warning?.let { "⚠ $it" },
+                        ref?.let {
+                            "Position: ${app.surrealar.receiver.tilt.TiltStatusText.referenceLabel(it)}. " +
+                                app.surrealar.receiver.tilt.TiltStatusText.referenceExplanation(it, null)
+                        },
+                    ).joinToString("\n").ifEmpty { null }
+                }.collect { text -> setOptionalText(tvPositionReference, text) }
             }
         }
 
@@ -769,7 +774,10 @@ class AddCoordinateDialogFragment(
                     // null when not an external receiver capture.
                     receiverFrame = if (isExternalMode) captureVm.occupationReceiverDatum()?.frameToken() else null
                 )
-                if (persistIfValid(coordinate)) dismissAllowingStateLoss()
+                if (persistIfValid(coordinate)) {
+                    if (isExternalMode) captureVm.noteSavedPoint(coordinate.id)
+                    dismissAllowingStateLoss()
+                }
             }
         } else {
             // Model-embedded location: the model's own coordinates, not an antenna measurement, so

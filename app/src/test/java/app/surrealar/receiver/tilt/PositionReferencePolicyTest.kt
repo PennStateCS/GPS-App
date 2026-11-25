@@ -40,6 +40,18 @@ class PositionReferencePolicyTest {
         }
     }
 
+    @Test fun unknownProfile_isTreatedAsOutputUnknown_neverPoleTip() {
+        val u = PositionReferencePolicy::evaluateUnknownProfile
+        assertEquals(EpochReference.MAY_BE_COMPENSATED, u("34.10", matched(EmlidTiltState.ACTIVE), true).reference)
+        assertEquals(EpochReference.MAY_BE_COMPENSATED, u("34.10", unmatched(TiltMatch.NOT_MATCHED), true).reference)
+        assertEquals(EpochReference.ANTENNA, u("34.10", matched(EmlidTiltState.OFF), false).reference)
+        assertEquals(EpochReference.ANTENNA_UNCERTAIN, u(null, unmatched(TiltMatch.NO_ETC_SEEN), false).reference)
+        for (state in EmlidTiltState.entries) for (fw in listOf("34.10", null)) {
+            assertTrue(u(fw, matched(state), true).reference != EpochReference.POLE_TIP)
+        }
+        assertEquals(EmlidPositionReference.Reason.OUTPUT_SETTING_UNKNOWN, u("34.10", unmatched(TiltMatch.NO_ETC_SEEN), false).result?.reason)
+    }
+
     @Test fun enabled_firmwareOk_matchedActive_isPoleTip() {
         val c = eval(tilt = matched(EmlidTiltState.ACTIVE))
         assertEquals(EpochReference.POLE_TIP, c.reference)

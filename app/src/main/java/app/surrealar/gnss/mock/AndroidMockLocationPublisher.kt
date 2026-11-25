@@ -273,7 +273,9 @@ class AndroidMockLocationPublisher(
                     .horizontalMeters?.toFloat()?.takeIf { it > 0f }
                 ?: fallbackHorizontalAccuracyM(fix.rtkStatus)
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // No altitude → no vertical accuracy either (a vertical accuracy without an altitude would
+            // describe a height that is not there).
+            if (!omitAltitude && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 fix.vAccM?.let { verticalAccuracyMeters = it.toFloat() }
             }
 

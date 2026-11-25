@@ -216,6 +216,15 @@ class AndroidMockLocationPublisherTest {
         assertFalse(loc.hasAltitude())
     }
 
+    @Test fun `omitted altitude also omits the vertical accuracy`() {
+        val withAlt = publisher.fixToLocation(externalFix(altM = 150.0, vAccM = 0.03))
+        assertTrue(withAlt.hasVerticalAccuracy())
+        val omitted = publisher.fixToLocation(externalFix(altM = 150.0, vAccM = 0.03), omitAltitude = true)
+        assertFalse(omitted.hasAltitude())
+        assertFalse(omitted.hasVerticalAccuracy())
+        assertTrue("horizontal accuracy is still set", omitted.hasAccuracy())
+    }
+
     @Test fun `horizontal accuracy is set when present`() {
         val fix = externalFix(hAccM = 0.015)
         val loc = publisher.fixToLocation(fix)

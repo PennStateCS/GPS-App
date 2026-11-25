@@ -77,7 +77,8 @@ that is on makes the epoch "may be compensated").
 | Receiver profile changed | PCO and tilt rules change; probably another receiver | **Stop** (all external captures) |
 | Receiver host changed | Another receiver | **Stop** (all external captures) |
 | "Compensated NMEA output" changed | Reference interpretation changes | **Stop** (RS4 / RS4 Pro) |
-| Correction base station id changed (both ids reported) | RTK solution refers to another base | **Stop** (all external captures) |
+| Firmware no longer known ≥ 34.7 in a pole-tip occupation (rare: the last known firmware and the value at the start are kept) | Pole tip can't be confirmed | **Stop** (`firmware_unknown`, "the receiver firmware could not be confirmed …") |
+| Correction base station id changed (both ids reported; empty / all-zero ids ignored) for ≥ 3 epochs or ≥ 1 s | RTK solution refers to another base | **Stop** (all external captures); shorter flickers: those epochs excluded, logged as transient |
 | Antenna / pole-height / PCO setting changed | Epochs unchanged; reduction is bound to the start snapshot | Continue (logged) |
 | Disconnect / reconnect of the same receiver | Status only; tilt tracker is reset, so epochs stay unknown until ETC returns (excluded / stale rule above) | Continue |
 | External datum or GNSS source changed (Phase 3/4) | Frame / source mix | Stop (unchanged) |
