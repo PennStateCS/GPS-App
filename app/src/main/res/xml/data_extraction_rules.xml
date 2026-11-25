@@ -11,6 +11,7 @@
         <exclude domain="file" path="diagnostics/" />
         <exclude domain="file" path="models/" />
         <exclude domain="file" path="thumbnails/" />
+        <exclude domain="file" path="nmea_recordings/" />
     </cloud-backup>
     <!-- Device-to-device transfer keeps everything (local transfer; size is not a concern). -->
 </data-extraction-rules>

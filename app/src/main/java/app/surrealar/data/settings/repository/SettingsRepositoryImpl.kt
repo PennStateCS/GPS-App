@@ -345,6 +345,12 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setDeveloperToolsEnabled(settings.developerToolsEnabled)
     }
 
+    override val rawNmeaPrivacyAcknowledged: Flow<Boolean> = local.rawNmeaPrivacyAcknowledged
+
+    override suspend fun setRawNmeaPrivacyAcknowledged(value: Boolean) {
+        local.setRawNmeaPrivacyAcknowledged(value)
+    }
+
     // Appearance
     override val appearanceSettings: Flow<AppearanceSettings> =
         combine(

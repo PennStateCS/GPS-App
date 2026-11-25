@@ -136,6 +136,11 @@ interface GnssReceiverSettingsRepository {
 interface DeveloperSettingsRepository {
     val developerSettings: Flow<DeveloperSettings>
     suspend fun setDeveloperSettings(settings: DeveloperSettings)
+
+    /** Raw NMEA Recording: the one-time privacy explanation was acknowledged (default false). */
+    val rawNmeaPrivacyAcknowledged: Flow<Boolean>
+        get() = kotlinx.coroutines.flow.flowOf(false)
+    suspend fun setRawNmeaPrivacyAcknowledged(value: Boolean) {}
 }
 
 /** Theme/appearance preferences (theme mode, status bar, screen-awake, brightness). */

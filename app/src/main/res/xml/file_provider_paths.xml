@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Internal cache directory for diagnostic report ZIPs (the only FileProvider share). -->
+    <!-- Internal cache directory for diagnostic report ZIPs. -->
     <cache-path name="diagnostic_exports" path="diagnostic_exports/" />
+    <!-- Developer Tools raw NMEA recordings (.nmea + .json), shared only through the share sheet. -->
+    <files-path name="nmea_recordings" path="nmea_recordings/" />
 </paths>

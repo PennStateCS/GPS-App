@@ -35,6 +35,7 @@ object SettingsRedaction {
         "map_tools_open_default", "map_drawer_expanded_default",
         "stakeout_tolerance_m", "stakeout_warning_accuracy_m", "stakeout_enable_haptics", "stakeout_enable_audio",
         "stakeout_keep_screen_on", "stakeout_compass_heading",
+        "dev_raw_nmea_privacy_ack",
     )
 
     private val SENSITIVE = Regex("(?i)(pass(word|wd)?|pwd|secret|token|api_?key|credential|auth|ntrip_?(user|login|mount))")

@@ -147,6 +147,9 @@ val AR_ANTENNA_ABOVE_CAMERA_M      = stringPreferencesKey("ar_antenna_above_came
     val STAKEOUT_ENABLE_AUDIO          = booleanPreferencesKey("stakeout_enable_audio")
     val STAKEOUT_KEEP_SCREEN_ON        = booleanPreferencesKey("stakeout_keep_screen_on")
     val STAKEOUT_COMPASS_HEADING       = booleanPreferencesKey("stakeout_compass_heading")
+
+    /** Developer Tools → Raw NMEA Recording: the one-time privacy explanation was acknowledged; absent = false. */
+    val DEV_RAW_NMEA_PRIVACY_ACK       = booleanPreferencesKey("dev_raw_nmea_privacy_ack")
 }
 
 /**
@@ -330,6 +333,8 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
 
     // Developer settings setter
     suspend fun setDeveloperToolsEnabled(enabled: Boolean) { dataStore.edit { it[SettingsKeys.DEV_TOOLS_ENABLED] = enabled } }
+    val rawNmeaPrivacyAcknowledged: Flow<Boolean> = dataStore.data.map { it[SettingsKeys.DEV_RAW_NMEA_PRIVACY_ACK] ?: false }
+    suspend fun setRawNmeaPrivacyAcknowledged(v: Boolean) { dataStore.edit { it[SettingsKeys.DEV_RAW_NMEA_PRIVACY_ACK] = v } }
 
     // Mock location setter
     suspend fun setMockLocationEnabled(v: Boolean) { dataStore.edit { it[SettingsKeys.MOCK_LOCATION_ENABLED] = v } }

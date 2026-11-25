@@ -53,6 +53,9 @@ class SettingsFragment : BaseTwoPaneFragment() {
     /** Phase 5: app-scoped receiver selection core (test before switch, identification). */
     @Inject
     lateinit var receiverConnection: app.surrealar.receiver.selection.ReceiverConnectionController
+    /** Developer Tools → GNSS Diagnostics → Raw NMEA Recording. */
+    @Inject
+    lateinit var rawNmeaRecorder: app.surrealar.gnss.diagnostics.raw.RawNmeaRecorder
 
     // ─────────────────────────── Preferences / Data ───────────────────────────
     @Inject lateinit var repository: CoordinateRepository
@@ -145,7 +148,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private val mapController by lazy { MapSettingsController(this, settingsRepo, settingsRepo, saveScope) }
     private val captureController by lazy { CaptureSettingsController(this, settingsRepo, saveScope) }
     private val coordinatesController by lazy { CoordinatesSettingsController(this, settingsRepo, fixSwitchboard, coordinateSystemService, saveScope) }
-    private val developerController by lazy { DeveloperSettingsController(this, settingsRepo, saveScope) }
+    private val developerController by lazy { DeveloperSettingsController(this, settingsRepo, saveScope, rawNmeaRecorder) }
     private val aboutController by lazy { AboutSettingsController(this) }
     private val dataController: DataSettingsController by lazy {
         DataSettingsController(this, repository, settingsRepo, coordinateSystemService, exportBackup, importBackup, saveScope,
