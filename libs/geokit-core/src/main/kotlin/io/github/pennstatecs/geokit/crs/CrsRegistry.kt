@@ -4,6 +4,8 @@ import io.github.pennstatecs.geokit.datum.CoordinateEpoch
 import io.github.pennstatecs.geokit.datum.FrameTransformationLookup
 import io.github.pennstatecs.geokit.datum.FrameTransformationRegistry
 import io.github.pennstatecs.geokit.datum.ReferenceFrame
+import io.github.pennstatecs.geokit.datum.weakestStatus
+import io.github.pennstatecs.geokit.status.ProductStatus
 import io.github.pennstatecs.geokit.projection.SpcsZoneBoundaries
 import io.github.pennstatecs.geokit.projection.SpcsZoneLocator
 import io.github.pennstatecs.geokit.projection.SpcsZones
@@ -25,6 +27,11 @@ import io.github.pennstatecs.geokit.projection.Utm
  * reports [io.github.pennstatecs.geokit.status.ProductStatus.VERIFIED_BETA] and is returned by [search] /
  * [atPosition] only with `includeBeta = true`. As of this catalog no 2022 frame is reachable, so every
  * SPCS2022 lookup is [CrsLookup.Unsupported] (with the entry and its reason).
+ *
+ * Status of an operational entry ([CrsDefinition.status]) is the weaker of its declared status (catalog
+ * `status` column; legacy for the built-in catalogs) and the status of the frame path from
+ * "WGS84 (ITRF2014)" ([io.github.pennstatecs.geokit.datum.FrameTransformationLookup.status]): a zone or
+ * geographic CRS whose frame is reachable only through a [ProductStatus.VERIFIED_BETA] edge is beta.
  *
  * Thread-safe; every catalog is built lazily on first use.
  *
@@ -55,7 +62,8 @@ public class CrsRegistry(
             val frame = d.frame
             if (!d.operational || frame == null) d
             else when (val l = frameRegistry.find(ReferenceFrame.WGS84_AS_ITRF2014, frame, probe)) {
-                is FrameTransformationLookup.Available -> d
+                // Effective status = the weaker of the zone's declared status and its frame path's.
+                is FrameTransformationLookup.Available -> d.withDeclaredStatus(weakestStatus(listOf(d.declaredStatus, l.status)))
                 is FrameTransformationLookup.Unavailable ->
                     d.withoutOperation("${d.statusNote}; but frame ${d.frame.id} has no verified transformation: ${l.explanation}")
             }
@@ -256,6 +264,8 @@ public class CrsRegistry(
                 parameters = emptyMap(), unit = CrsUnit.DEGREE, areaOfUse = geographicArea(frame),
                 dataset = EPSG_DATASET, operational = operational,
                 statusNote = (lookup as? FrameTransformationLookup.Unavailable)?.let { "no verified transformation from WGS84 (ITRF2014): ${it.explanation}" },
+                // A frame reachable only through a beta edge is a beta CRS (opt-in), else legacy as before.
+                declaredStatus = if (operational) lookup.status else ProductStatus.VERIFIED_LEGACY,
             )
         }
         return CrsCatalog(CrsCatalogId.GEOGRAPHIC, EPSG_DATASET, entries, emptyList(), "no geographic CRS is operational")
