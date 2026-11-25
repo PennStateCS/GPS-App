@@ -11,16 +11,26 @@ import app.surrealar.settings.model.AntennaSetup
 import app.surrealar.settings.model.CompensatedOutputSetting
 import app.surrealar.settings.model.CoordinateSystemSettings
 import app.surrealar.settings.model.ProfileOrigin
+import app.surrealar.receiver.tilt.PositionReferencePolicy
 import app.surrealar.ui.settings.AntennaHeightInput
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.receiver.emlid.EmlidMapping
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.receiver.ReceiverBattery
 import io.github.pennstatecs.geokit.gnss.receiver.ReceiverCapabilities
 import io.github.pennstatecs.geokit.gnss.receiver.ReceiverCorrections
 import io.github.pennstatecs.geokit.gnss.receiver.ReceiverDeviceInfo
 
-/** One row of the receiver details: label, value, where the value comes from, optional note. */
-data class DetailRow(val label: Int, val value: String, val origin: ValueOrigin?, val note: String? = null)
-data class DetailSection(val title: Int, val rows: List<DetailRow>)
+/**
+ * One row of the receiver details: label, value, where the value comes from, optional note. [labelText] = a label the
+ * receiver itself named (vendor details); it replaces the [label] resource (0 then).
+ */
+data class DetailRow(val label: Int, val value: String, val origin: ValueOrigin?, val note: String? = null, val labelText: String? = null) {
+    fun labelOf(ctx: Context): String = labelText ?: ctx.getString(label)
+}
+
+/** [collapsible] = the sheet shows only the title until the user expands it (receiver-reported vendor details). */
+data class DetailSection(val title: Int, val rows: List<DetailRow>, val collapsible: Boolean = false)
 
 /** What the details sheet reads. */
 data class DetailsInputs(
@@ -82,6 +92,15 @@ object ReceiverDetailsPresenter {
         if (external) {
             val c = i.corrections?.takeIf { live }
             val rows = mutableListOf<DetailRow>()
+            // L9: RTK fix quality from the live fix (every external receiver; the NMEA stream reports it).
+            val liveFix = i.fix?.takeIf { live && it.provider != Provider.INTERNAL && validLatLon(it) }
+            rows += if (liveFix == null) DetailRow(R.string.details_fix_quality, ctx.getString(R.string.receiver_fix_waiting), ValueOrigin.UNKNOWN)
+            else {
+                val quality = fixText(ctx, ReceiverCardPresenter.fixOf(liveFix.rtkStatus))
+                val age = liveFix.diffAgeS
+                DetailRow(R.string.details_fix_quality,
+                    if (age == null) quality else ctx.getString(R.string.details_fix_quality_age, quality, age), ValueOrigin.REPORTED)
+            }
             if (i.capabilities.hasCorrectionsStatus) {
                 rows += if (c == null) DetailRow(R.string.details_corrections, notReported, ValueOrigin.UNKNOWN)
                 else DetailRow(R.string.details_corrections, when {
@@ -124,11 +143,18 @@ object ReceiverDetailsPresenter {
                     if (setup.offsetFromProfile) ValueOrigin.DEFAULT else ValueOrigin.SET_BY_USER,
                     note = if (setup.offsetFromProfile) s.profile.label else null)
             else DetailRow(R.string.details_pco, unknown, ValueOrigin.UNKNOWN)
-            antenna += DetailRow(R.string.details_compensated, i.compensated.label,
-                if (i.compensated == CompensatedOutputSetting.UNKNOWN) ValueOrigin.UNKNOWN else ValueOrigin.SET_BY_USER,
-                note = ctx.getString(R.string.details_tilt_note))
+            // L9: tilt only exists on the RS4 / RS4 Pro. The stored value does not say who set it: the default
+            // (Unknown) is labelled Default, Enabled / Disabled can only have been chosen by the user.
+            if (PositionReferencePolicy.appliesTo(s.profile)) {
+                antenna += DetailRow(R.string.details_compensated, i.compensated.label,
+                    setting(i.compensated == CompensatedOutputSetting.DEFAULT),
+                    note = ctx.getString(R.string.details_tilt_note))
+            }
             out += DetailSection(R.string.details_section_antenna, antenna)
         }
+
+        // ── Receiver-reported details (M4: what the old device-info panel showed; collapsible)
+        if (external) out += DetailSection(R.string.details_section_vendor, vendorRows(ctx, info, i.battery?.takeIf { live }), collapsible = true)
 
         // ── Troubleshooting
         val trouble = mutableListOf<DetailRow>()
@@ -154,7 +180,7 @@ object ReceiverDetailsPresenter {
             for (r in sec.rows) {
                 if (r.label == R.string.details_name) continue
                 val tag = r.origin?.let { " [${originText(ctx, it)}]" }.orEmpty()
-                appendLine("${ctx.getString(r.label)}: ${r.value}$tag")
+                appendLine("${r.labelOf(ctx)}: ${r.value}$tag")
             }
         }
     }.trimEnd()
@@ -166,6 +192,54 @@ object ReceiverDetailsPresenter {
         ValueOrigin.EARLIER_REPORT -> R.string.receiver_origin_earlier
         ValueOrigin.UNKNOWN -> R.string.receiver_origin_unknown
     })
+
+    /**
+     * Uptime, temperature, power and storage as the receiver reports them (Emlid device info / battery), plus the
+     * vendor's own extra fields. Never the address, host name or the raw HTTP response. Receivers report no
+     * self-test results through [ReceiverDeviceInfo], so none are listed.
+     */
+    fun vendorRows(ctx: Context, info: ReceiverDeviceInfo?, battery: ReceiverBattery?): List<DetailRow> {
+        val rows = mutableListOf<DetailRow>()
+        fun add(label: Int, v: String?) { if (!v.isNullOrBlank()) rows += DetailRow(label, v, ValueOrigin.REPORTED) }
+        add(R.string.details_uptime, info?.uptimeText ?: info?.uptimeS?.let { formatUptime(it) })
+        add(R.string.details_temperature, battery?.temperatureC?.let { ctx.getString(R.string.details_temperature_value, it) })
+        add(R.string.details_voltage, battery?.voltageV?.let { ctx.getString(R.string.details_voltage_value, it) })
+        add(R.string.details_current, battery?.currentA?.let { ctx.getString(R.string.details_current_value, it) })
+        add(R.string.details_charger, battery?.chargerStatus)
+        add(R.string.details_storage, info?.storage?.let {
+            ctx.getString(R.string.details_storage_value, it.usedMb, it.totalMb, it.availableMb)
+        })
+        val extras = (info?.details.orEmpty() + battery?.details.orEmpty()).filterKeys { it != EmlidMapping.RAW_RESPONSE }
+        for ((k, v) in extras) if (v.isNotBlank()) rows += DetailRow(0, v, ValueOrigin.REPORTED, labelText = k)
+        if (rows.isEmpty()) rows += DetailRow(R.string.details_vendor_none, ctx.getString(R.string.details_not_reported), ValueOrigin.UNKNOWN)
+        return rows
+    }
+
+    /** "2d 3h 4m" / "3h 4m" / "4m" (as the Developer page shows it). */
+    fun formatUptime(seconds: Long): String {
+        val days = seconds / 86400; val h = (seconds % 86400) / 3600; val m = (seconds % 3600) / 60
+        return when {
+            days > 0 -> "${days}d ${h}h ${m}m"
+            h > 0 -> "${h}h ${m}m"
+            else -> "${m}m"
+        }
+    }
+
+    private fun fixText(ctx: Context, f: CardFix): String = ctx.getString(when (f) {
+        CardFix.NO_FIX -> R.string.receiver_fix_none
+        CardFix.SINGLE -> R.string.receiver_fix_single
+        CardFix.DGPS -> R.string.receiver_fix_dgps
+        CardFix.FLOAT -> R.string.receiver_fix_float
+        CardFix.FIX -> R.string.receiver_fix_fix
+        CardFix.DEAD_RECKONING -> R.string.receiver_fix_dr
+    })
+
+    /** A valid position (fix liveness = valid lat/lon, never wall-clock age). */
+    private fun validLatLon(f: Fix): Boolean {
+        val lat = f.latDeg
+        val lon = f.lonDeg
+        return !lat.isNaN() && !lon.isNaN() && lat in -90.0..90.0 && lon in -180.0..180.0 && !(lat == 0.0 && lon == 0.0)
+    }
 
     private fun setting(isDefault: Boolean) = if (isDefault) ValueOrigin.DEFAULT else ValueOrigin.SET_BY_USER
 
