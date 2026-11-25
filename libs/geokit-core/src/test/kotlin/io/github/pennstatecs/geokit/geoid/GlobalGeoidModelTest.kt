@@ -228,7 +228,7 @@ class GlobalGeoidModelTest {
         }
         assertEquals("EGM96", GlobalGeoidModels.egm96().verticalDatumName(40.0, -77.0))
         // Stored tokens never change spelling.
-        assertEquals(listOf("GEOID18", "EGM2008", "EGM96"), GeoidModelId.entries.map { it.token })
+        assertEquals(listOf("GEOID18", "EGM2008", "EGM96", "GEOID2022"), GeoidModelId.entries.map { it.token })
         for (id in GeoidModelId.entries) assertEquals(id, GeoidModelId.fromToken(id.token))
         assertEquals(null, GeoidModelId.fromToken("NAVD88"))
         assertEquals(null, GeoidModelId.fromToken(null))
