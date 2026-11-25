@@ -68,6 +68,12 @@ object SettingsKeys {
     val COORD_NSRS2022_PREVIEW    = booleanPreferencesKey("coord_nsrs2022_beta_preview")
     /** Phase 4 WP X: SPCS2022 (beta) zone as the CRS registry id "spcs2022:<zone code>"; absent = none chosen. */
     val COORD_SPCS2022_ZONE       = stringPreferencesKey("coord_spcs2022_zone")
+    /**
+     * Phase 4 stabilization: the last SPCS83 zone (EPSG) chosen, kept while another system is selected so that
+     * returning to State Plane restores it. The State Plane pref value ("spcs83:<EPSG>") stays authoritative
+     * while State Plane is selected; absent = none remembered (the model default).
+     */
+    val COORD_SPCS83_ZONE_EPSG    = intPreferencesKey("coord_spcs83_zone_epsg")
     val GNSS_CAPTURE_PRESET            = stringPreferencesKey("gnss_capture_preset")
     /** Custom precision-based stop target (m); absent or <= 0 = off. */
     val GNSS_CAPTURE_PRECISION_TARGET_M = doublePreferencesKey("gnss_capture_precision_target_m")
@@ -188,6 +194,7 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     val coordExternalRxDatum:   Flow<String?> = dataStore.data.map { it[SettingsKeys.COORD_EXTERNAL_RX_DATUM] }
     val coordNsrs2022Preview:   Flow<Boolean> = dataStore.data.map { it[SettingsKeys.COORD_NSRS2022_PREVIEW] ?: false }
     val coordSpcs2022Zone:      Flow<String?> = dataStore.data.map { it[SettingsKeys.COORD_SPCS2022_ZONE] }
+    val coordSpcs83ZoneEpsg:    Flow<Int?>    = dataStore.data.map { it[SettingsKeys.COORD_SPCS83_ZONE_EPSG] }
     val gnssCapturePrecisionTargetM: Flow<Double?> = dataStore.data.map { it[SettingsKeys.GNSS_CAPTURE_PRECISION_TARGET_M]?.takeIf { v -> v > 0.0 } }
 
     // AR Display settings flows (defaults centralized in SettingsDefaults.arDisplay)
@@ -270,9 +277,11 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
      * SPCS2022 zone key is written only with [writeSpcs2022Zone] (null [spcs2022Zone] then removes it).
      */
     suspend fun setCoordinateSystem(horizontal: String, datum: String, unit: String, vertical: String, externalRxDatum: String,
-                                    nsrs2022Preview: Boolean? = null, spcs2022Zone: String? = null, writeSpcs2022Zone: Boolean = false) {
+                                    nsrs2022Preview: Boolean? = null, spcs2022Zone: String? = null, writeSpcs2022Zone: Boolean = false,
+                                    spcs83ZoneEpsg: Int? = null) {
         dataStore.edit {
             it[SettingsKeys.COORD_HORIZONTAL_SYSTEM] = horizontal
+            if (spcs83ZoneEpsg != null) it[SettingsKeys.COORD_SPCS83_ZONE_EPSG] = spcs83ZoneEpsg
             it[SettingsKeys.COORD_OUTPUT_DATUM] = datum
             it[SettingsKeys.COORD_LINEAR_UNIT] = unit
             it[SettingsKeys.COORD_VERTICAL_REFERENCE] = vertical

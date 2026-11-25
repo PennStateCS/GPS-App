@@ -214,6 +214,11 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         )
     }.combine(local.coordNsrs2022Preview) { s, preview -> s.copy(nsrs2022Preview = preview) }
         .combine(local.coordSpcs2022Zone) { s, zone -> if (zone == null) s else s.copy(spcs2022Zone = zone) }
+        // The remembered SPCS83 zone applies while another system is selected ("spcs83:<EPSG>" wins otherwise),
+        // so switching away from State Plane and back keeps the zone.
+        .combine(local.coordSpcs83ZoneEpsg) { s, zone ->
+            if (zone == null || s.horizontal == app.surrealar.settings.model.HorizontalSystem.STATE_PLANE) s else s.copy(spcsZoneEpsg = zone)
+        }
 
     override suspend fun setCoordinateSystemSettings(settings: app.surrealar.settings.model.CoordinateSystemSettings) {
         local.setCoordinateSystem(
@@ -221,6 +226,7 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
             settings.vertical.prefKey, settings.externalReceiverDatum.prefKey,
             nsrs2022Preview = settings.nsrs2022Preview,
             spcs2022Zone = settings.spcs2022Zone, writeSpcs2022Zone = true,
+            spcs83ZoneEpsg = settings.spcsZoneEpsg,
         )
     }
 

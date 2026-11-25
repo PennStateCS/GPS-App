@@ -22,7 +22,7 @@ object SettingsRedaction {
         "gnss_capture_min_samples", "gnss_capture_max_fix_age_sec", "gnss_capture_max_diff_age_sec",
         "gnss_capture_preset", "gnss_capture_precision_target_m",
         "coord_horizontal_system", "coord_output_datum", "coord_linear_unit", "coord_vertical_reference",
-        "coord_external_receiver_datum", "coord_nsrs2022_beta_preview",
+        "coord_external_receiver_datum", "coord_nsrs2022_beta_preview", "coord_spcs2022_zone", "coord_spcs83_zone_epsg",
         "ar_altitude_mode_v2", "ar_distance_filter_index", "ar_show_debug_overlay", "ar_show_labels",
         "ar_show_offscreen_arrows", "ar_model_scale_v2", "ar_antenna_above_camera_m", "ar_debug_tools_enabled",
         "high_accuracy", "antenna_height_m", "internal_antenna_height_m", "dev_tools_enabled",

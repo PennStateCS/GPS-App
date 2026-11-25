@@ -24,6 +24,7 @@ import app.surrealar.settings.model.CoordinateDisplaySettings
 import app.surrealar.settings.model.ExternalReceiverProfile
 import app.surrealar.settings.model.ExternalReceiverSettings
 import app.surrealar.settings.model.StakeoutSettings
+import app.surrealar.settings.model.HorizontalSystem as H
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -387,5 +388,60 @@ class SettingsRepositoryRoundTripTest {
         val second = runner.migrateIfNeeded()
         assertEquals(false, second.migrated)
         assertEquals(SettingsDefaults.CURRENT_SETTINGS_SCHEMA_VERSION, localDs.schemaVersion.first())
+    }
+
+    // ── coordinate system: State Plane zones survive switching systems (Phase 4 stabilization) ─────────
+
+    @Test
+    fun `SPCS83 and SPCS2022 zones are kept separately while switching Geographic, UTM, SPCS83 and SPCS2022`() = runBlocking {
+        suspend fun edit(f: (app.surrealar.settings.model.CoordinateSystemSettings) -> app.surrealar.settings.model.CoordinateSystemSettings) =
+            repo.setCoordinateSystemSettings(f(repo.coordinateSystemSettings.first()))
+        suspend fun now() = repo.coordinateSystemSettings.first()
+
+        edit { it.copy(horizontal = H.STATE_PLANE, spcsZoneEpsg = 6564) }          // PA South
+        assertEquals("spcs83:6564", dataStore.data.first()[SettingsKeys.COORD_HORIZONTAL_SYSTEM])
+        edit { it.copy(horizontal = H.GEOGRAPHIC) }
+        assertEquals(H.GEOGRAPHIC, now().horizontal)
+        assertEquals("zone remembered while Geographic is selected", 6564, now().spcsZoneEpsg)
+        edit { it.copy(horizontal = H.UTM) }
+        assertEquals(6564, now().spcsZoneEpsg)
+        edit { it.copy(nsrs2022Preview = true, horizontal = H.SPCS2022, spcs2022Zone = "spcs2022:421001") }
+        assertEquals(6564, now().spcsZoneEpsg)
+        edit { it.copy(horizontal = H.STATE_PLANE) }
+        assertEquals(H.STATE_PLANE, now().horizontal)
+        assertEquals("back to SPCS83 restores its zone", 6564, now().spcsZoneEpsg)
+        assertEquals("SPCS2022 zone kept separately", "spcs2022:421001", now().spcs2022Zone)
+        edit { it.copy(horizontal = H.SPCS2022) }
+        assertEquals("spcs2022:421001", now().spcs2022Zone)
+
+        // Preview OFF: SPCS2022 is suspended (Geographic shown) but both zones are kept.
+        edit { it.copy(nsrs2022Preview = false) }
+        assertEquals(H.SPCS2022, now().horizontal)
+        assertEquals(H.GEOGRAPHIC, now().effectiveHorizontal)
+        assertEquals("spcs2022:421001", now().spcs2022Zone)
+        assertEquals(6564, now().spcsZoneEpsg)
+        edit { it.copy(horizontal = H.STATE_PLANE) }
+        assertEquals(6564, now().spcsZoneEpsg)
+        // Picking another SPCS83 zone updates the remembered one too.
+        edit { it.copy(spcsZoneEpsg = 6562) }
+        edit { it.copy(horizontal = H.GEOGRAPHIC) }
+        edit { it.copy(horizontal = H.STATE_PLANE) }
+        assertEquals(6562, now().spcsZoneEpsg)
+    }
+
+    @Test
+    fun `existing installs - the State Plane pref value still decides, absent zone key reads the default`() = runBlocking {
+        writeRawString(SettingsKeys.COORD_HORIZONTAL_SYSTEM, "spcs83:6564")       // saved before the new key existed
+        assertEquals(H.STATE_PLANE, repo.coordinateSystemSettings.first().horizontal)
+        assertEquals(6564, repo.coordinateSystemSettings.first().spcsZoneEpsg)
+        writeRawString(SettingsKeys.COORD_HORIZONTAL_SYSTEM, "spcs83_pa_south")   // earlier PA-only value
+        assertEquals(6564, repo.coordinateSystemSettings.first().spcsZoneEpsg)
+        writeRawString(SettingsKeys.COORD_HORIZONTAL_SYSTEM, "geographic")
+        assertEquals(app.surrealar.settings.model.CoordinateSystemSettings.DEFAULT_SPCS_ZONE_EPSG,
+            repo.coordinateSystemSettings.first().spcsZoneEpsg)
+        // A remembered zone never overrides the zone in an explicit State Plane value.
+        dataStore.edit { it[SettingsKeys.COORD_SPCS83_ZONE_EPSG] = 6562 }
+        writeRawString(SettingsKeys.COORD_HORIZONTAL_SYSTEM, "spcs83:6564")
+        assertEquals(6564, repo.coordinateSystemSettings.first().spcsZoneEpsg)
     }
 }
