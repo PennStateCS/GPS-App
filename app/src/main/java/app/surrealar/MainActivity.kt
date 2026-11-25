@@ -799,8 +799,8 @@ class MainActivity : AppCompatActivity() {
     /** Solution / satellites tap: Settings › Receiver. (It opened the Developer page when developer tools were on; removed for now.) */
     private fun openToolbarGnssStatus() = openReceiverDetails()
 
-    /** Battery: Settings › Receiver (status, battery, device info). */
-    private fun openReceiverDetails() = navigateFromToolbar(
+    /** Battery: Settings › Receiver (status, battery, device info). Also the capture dialog's "Open receiver settings". */
+    internal fun openReceiverDetails() = navigateFromToolbar(
         R.id.nav_settings,
         androidx.core.os.bundleOf(app.surrealar.ui.settings.SettingsFragment.ARG_INITIAL_CATEGORY_ID to
             app.surrealar.ui.settings.SettingsFragment.CATEGORY_RECEIVER),

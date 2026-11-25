@@ -725,6 +725,12 @@ class AddCoordinateDialogFragment(
                 return
             }
             viewLifecycleOwner.lifecycleScope.launch {
+                // Unconfirmed position reference (RS4 with "Compensated NMEA output" Unknown, or an unreadable
+                // profile): ask first; "Save as unconfirmed" acknowledges (this occupation only) and saves again.
+                if (isExternalMode && captureVm.referenceAcknowledgmentNeeded()) {
+                    captureVm.unconfirmedReferenceWarning()?.let { showUnconfirmedReferenceDialog(it) }
+                    return@launch
+                }
                 // Settings as they were when this capture STARTED (antenna height edited mid-capture
                 // must not change a point measured with the old pole).
                 val snap = captureVm.settingsAtStart()
@@ -832,6 +838,34 @@ class AddCoordinateDialogFragment(
             )
             if (persistIfValid(coordinate)) dismissAllowingStateLoss()
         }
+    }
+
+    /**
+     * Save-time acknowledgment for an unconfirmed position reference ([CaptureViewModel.unconfirmedReferenceWarning]).
+     * "Save as unconfirmed" acknowledges for this occupation and saves (captureMethod
+     * EXTERNAL_GNSS_REFERENCE_UNCONFIRMED, antenna reduction applied); "Open receiver settings" discards the result
+     * (it was classified under the Unknown setting, so it must be captured again) and opens Settings → Receiver;
+     * "Cancel" keeps the dialog and the completed result.
+     */
+    private fun showUnconfirmedReferenceDialog(warning: String) {
+        if (!isAdded) return
+        DiagnosticsLogger.i(DiagTags.CAPTURE, "Capture save needs acknowledgment: position reference unconfirmed")
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(CaptureViewModel.REFERENCE_ACK_TITLE)
+            .setMessage(CaptureViewModel.referenceAckMessage(warning))
+            .setPositiveButton(R.string.capture_reference_save_unconfirmed) { _, _ ->
+                captureVm.acknowledgeUnconfirmedReference()
+                handleSave()
+            }
+            .setNeutralButton(R.string.capture_reference_open_settings) { _, _ ->
+                DiagnosticsLogger.i(DiagTags.CAPTURE, "Capture discarded to open receiver settings (position reference unconfirmed)")
+                val activity = activity as? app.surrealar.MainActivity
+                captureVm.cancel()
+                dismissAllowingStateLoss()
+                activity?.openReceiverDetails()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     /**
