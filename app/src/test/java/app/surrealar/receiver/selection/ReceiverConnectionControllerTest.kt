@@ -142,6 +142,33 @@ class ReceiverConnectionControllerTest {
         assertWorkingExternalUnchanged()
     }
 
+    @Test fun `a receiver streaming valid NMEA without a fix is reachable and switched to`() = runTest {
+        val c = controller()
+        probe.next().complete(TcpProbeResult.RECEIVING_NMEA_NO_POSITION)
+        c.connect(ConnectRequest("192.168.42.7", 9001))
+        runCurrent()
+        val a = c.state.value.attempt as ConnectionAttempt.Succeeded
+        assertTrue("reported as reachable without a position yet", a.noPositionYet)
+        assertEquals(ProviderChoice.EXTERNAL_TCP, provider.value)
+        assertEquals(LocationSourceType.EXTERNAL, settings.source.value)
+
+        probe.next().complete(TcpProbeResult.RECEIVING_NMEA_NO_POSITION)
+        assertEquals(ReceiverTestResult.Reachable(ReceiverTarget("10.0.0.5", 9000), null, noPositionYet = true),
+            c.test(ConnectRequest("10.0.0.5", 9000, profile = ExternalReceiverProfile.GENERIC_NMEA_TCP)))
+    }
+
+    @Test fun `dollar text that is not valid NMEA fails with an actionable message and changes nothing`() = runTest {
+        workingExternal()
+        val c = controller()
+        probe.next().complete(TcpProbeResult.INVALID_NMEA)
+        c.connect(ConnectRequest("192.168.42.7", 9002))
+        runCurrent()
+        val e = (c.state.value.attempt as ConnectionAttempt.Failed).error
+        assertEquals(ConnectError.NotNmea(9002, malformedNmea = true), e)
+        assertTrue(e.message, e.message.contains("not valid NMEA"))
+        assertWorkingExternalUnchanged()
+    }
+
     @Test fun `success saves in order, then activates, and remembers the receiver`() = runTest {
         val c = controller()
         val providerAtWrite = mutableListOf<ProviderChoice>()

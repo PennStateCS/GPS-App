@@ -259,28 +259,20 @@ class ReceiverConnectionController(
             // The vendor decides whether the Emlid HTTP API may be asked: an unreadable profile asks nothing.
             val storedProfile = read("externalReceiverProfile") { settings.externalReceiverProfile.first() }
             val vendor = (request.profile ?: storedProfile)?.vendor
-            val (tcp, http) = coroutineScope {
-                val tcp = async { probe.tcp(target.host, target.port) }
-                val http = if (vendor == ReceiverVendor.EMLID) async { probe.http(target.host) } else null
-                tcp.await() to http?.await()
-            }
+            val (tcp, http) = runProbe(target, vendor)
             if (!isCurrent(id)) {
                 DiagnosticsLogger.i(DiagTags.RECEIVER, "External receiver test ignored: superseded attempt=$id")
                 return
             }
-            val error = when (tcp) {
-                TcpProbeResult.RECEIVING_NMEA -> null
-                TcpProbeResult.CONNECT_FAILED -> if (http == true) ConnectError.HttpOnly(target.port) else ConnectError.Unreachable(target.port)
-                TcpProbeResult.CONNECTED_NO_DATA -> ConnectError.NoData(target.port)
-                TcpProbeResult.RECEIVING_RTCM_OR_BIN -> ConnectError.NotNmea(target.port)
-            }
+            val error = classify(tcp, http, target.port)
             if (error != null) {
                 DiagnosticsLogger.w(DiagTags.RECEIVER,
                     "External receiver test failed: nothing changed tcp=$tcp http=${http ?: "not asked"} port=${target.port} attempt=$id")
                 finish(id, ConnectionAttempt.Failed(id, target, error))
                 return
             }
-            commit(id, target, request, storedProfile, http, confirmed, forceReconnect)
+            commit(id, target, request, storedProfile, http, confirmed, forceReconnect,
+                noPositionYet = tcp == TcpProbeResult.RECEIVING_NMEA_NO_POSITION)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -290,8 +282,8 @@ class ReceiverConnectionController(
     }
 
     /**
-     * [test]'s probe, the same as [runAttempt]'s (kept separate so the attempt code is unchanged): the TCP NMEA sniff, plus the Emlid HTTP API in parallel only when [vendor] is
-     * Emlid (an unreadable profile, null, asks nothing).
+     * The probe of [runAttempt] and [test]: the TCP NMEA sniff, plus the Emlid HTTP API in parallel only when [vendor]
+     * is Emlid (an unreadable profile, null, asks nothing).
      */
     private suspend fun runProbe(target: ReceiverTarget, vendor: ReceiverVendor?): Pair<TcpProbeResult, Boolean?> = coroutineScope {
         val tcp = async { probe.tcp(target.host, target.port) }
@@ -299,12 +291,16 @@ class ReceiverConnectionController(
         tcp.await() to http?.await()
     }
 
-    /** Null when the sniff received NMEA; otherwise why the receiver can't be used (same mapping as [runAttempt]). */
+    /**
+     * Null when the sniff received valid NMEA (with or without a position: a receiver without a fix yet is reachable);
+     * otherwise why the receiver can't be used. Used by both [runAttempt] and [test].
+     */
     private fun classify(tcp: TcpProbeResult, http: Boolean?, port: Int): ConnectError? = when (tcp) {
-        TcpProbeResult.RECEIVING_NMEA -> null
+        TcpProbeResult.RECEIVING_NMEA, TcpProbeResult.RECEIVING_NMEA_NO_POSITION -> null
         TcpProbeResult.CONNECT_FAILED -> if (http == true) ConnectError.HttpOnly(port) else ConnectError.Unreachable(port)
         TcpProbeResult.CONNECTED_NO_DATA -> ConnectError.NoData(port)
         TcpProbeResult.RECEIVING_RTCM_OR_BIN -> ConnectError.NotNmea(port)
+        TcpProbeResult.INVALID_NMEA -> ConnectError.NotNmea(port, malformedNmea = true)
     }
 
     /**
@@ -322,7 +318,8 @@ class ReceiverConnectionController(
             val error = classify(tcp, http, target.port)
             DiagnosticsLogger.i(DiagTags.RECEIVER,
                 "External receiver connection test (no switch) tcp=$tcp http=${http ?: "not asked"} port=${target.port}")
-            if (error == null) ReceiverTestResult.Reachable(target, http) else ReceiverTestResult.Failed(target, error)
+            if (error == null) ReceiverTestResult.Reachable(target, http, noPositionYet = tcp == TcpProbeResult.RECEIVING_NMEA_NO_POSITION)
+            else ReceiverTestResult.Failed(target, error)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -339,7 +336,7 @@ class ReceiverConnectionController(
      */
     private suspend fun commit(
         id: Int, target: ReceiverTarget, request: ConnectRequest, storedProfile: ExternalReceiverProfile?, http: Boolean?,
-        confirmed: Boolean, forceReconnect: Boolean,
+        confirmed: Boolean, forceReconnect: Boolean, noPositionYet: Boolean = false,
     ) {
         switchLock.withLock {
             synchronized(lock) {
@@ -386,7 +383,7 @@ class ReceiverConnectionController(
                 DiagnosticsLogger.i(DiagTags.RECEIVER, "External receiver not activated: device GNSS selected meanwhile attempt=$id")
                 return
             }
-            finish(id, ConnectionAttempt.Succeeded(id, target, http))
+            finish(id, ConnectionAttempt.Succeeded(id, target, http, noPositionYet))
         }
     }
 
