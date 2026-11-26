@@ -148,8 +148,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Placement origin"
-                        android:textSize="12sp"
-                        android:textColor="?android:attr/textColorSecondary" />
+                        android:textAppearance="@style/TextAppearance.App.DataLabel" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -167,8 +166,7 @@
                             style="?attr/borderlessButtonStyle"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Snap bottom"
-                            android:textSize="12sp" />
+                            android:text="Snap bottom" />
                     </LinearLayout>
 
                     <TextView
@@ -176,8 +174,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
                         android:text="For large structures, use Bottom center so the model sits on the coordinate instead of being centered around it."
-                        android:textSize="12sp"
-                        android:textColor="?android:attr/textColorSecondary" />
+                        android:textAppearance="@style/TextAppearance.App.Supporting" />
 
                     <!-- Scale · Vertical offset -->
                     <LinearLayout style="@style/PlacementFieldRow">
@@ -216,8 +213,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
                         android:text="@string/model_yaw_help"
-                        android:textSize="12sp"
-                        android:textColor="?android:attr/textColorSecondary" />
+                        android:textAppearance="@style/TextAppearance.App.Supporting" />
 
                     <!-- Roll · Origin X -->
                     <LinearLayout style="@style/PlacementFieldRow">

@@ -593,8 +593,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="0"
-                                android:textSize="18sp"
-                                android:textStyle="bold"
+                                android:textAppearance="@style/TextAppearance.App.SectionHeading"
                                 android:layout_marginEnd="12dp"
                                 android:textColor="?attr/colorPrimary" />
 
@@ -644,8 +643,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="0"
-                                android:textSize="18sp"
-                                android:textStyle="bold"
+                                android:textAppearance="@style/TextAppearance.App.SectionHeading"
                                 android:layout_marginEnd="12dp"
                                 android:textColor="?attr/colorSecondary" />
 
