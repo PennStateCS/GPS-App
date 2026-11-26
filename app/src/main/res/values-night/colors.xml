@@ -14,15 +14,30 @@
     <color name="app_top_app_bar">#07121E</color>
     <color name="app_on_top_app_bar">#FFFFFF</color>
     <color name="app_status_strip">#0F3554</color>
-    <color name="app_on_status_strip">#F2F6FA</color>
-    <color name="app_on_status_strip_variant">#B8C7D6</color>
     <color name="app_status_separator">#6F8598</color>
 
-    <!-- Semantic status colors – night (slightly lighter for dark bg contrast) -->
-    <color name="app_success">#43A047</color>
-    <color name="app_warning">#EF6C00</color>
-    <color name="app_error">#D32F2F</color>
-    <color name="app_info">#1976D2</color>
+    <!-- Semantic status roles – night. Foregrounds are light tones (≥ 6.8:1 on every dark surface
+         up to surface_container_highest); containers are deep tones with light on-container text.
+         Old values failed: error #D32F2F 3.6:1 and info #1976D2 3.9:1 on #101820.
+         app_success/app_warning/app_error/app_info alias these from values/colors.xml. -->
+    <color name="status_success">#81C995</color>
+    <color name="status_success_container">#1E4D2B</color>
+    <color name="status_on_success_container">#C8F0D0</color>
+    <color name="status_warning">#F7C66A</color>
+    <color name="status_warning_container">#5D4100</color>
+    <color name="status_on_warning_container">#FFDEA8</color>
+    <color name="status_error">#FFB4AB</color>
+    <color name="status_error_container">#93000A</color>
+    <color name="status_on_error_container">#FFDAD6</color>
+    <color name="status_info">#9CC8FF</color>
+    <color name="status_info_container">#0F3A63</color>
+    <color name="status_on_info_container">#D7E8FF</color>
+    <color name="status_neutral">#C1C8CE</color>
+    <color name="status_neutral_container">#2A3644</color>
+    <color name="status_on_neutral_container">#E2E4E7</color>
+
+    <!-- RTK / GNSS status chips – night (light on dark; previously no override: #2E7D32 was 3.5:1) -->
+    <color name="status_single">#B0BEC5</color>
     <color name="app_primary">#8FC5FF</color>
     <color name="app_on_primary">#0F3A63</color>
     <color name="app_primary_container">#0F3A63</color>

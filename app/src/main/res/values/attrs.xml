@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Semantic status roles as theme attributes, so layouts and views can write
+        ?attr/colorStatusWarning (or MaterialColors.getColor(view, R.attr.colorStatusWarning))
+        and get the right value in light and dark. Set in Theme.SurveyingApp (values/ and values-night/)
+        from @color/status_*; see docs/design-system.md.
+    -->
+    <attr name="colorStatusSuccess" format="color" />
+    <attr name="colorStatusSuccessContainer" format="color" />
+    <attr name="colorOnStatusSuccessContainer" format="color" />
+    <attr name="colorStatusWarning" format="color" />
+    <attr name="colorStatusWarningContainer" format="color" />
+    <attr name="colorOnStatusWarningContainer" format="color" />
+    <attr name="colorStatusError" format="color" />
+    <attr name="colorStatusErrorContainer" format="color" />
+    <attr name="colorOnStatusErrorContainer" format="color" />
+    <attr name="colorStatusInfo" format="color" />
+    <attr name="colorStatusInfoContainer" format="color" />
+    <attr name="colorOnStatusInfoContainer" format="color" />
+    <attr name="colorStatusNeutral" format="color" />
+    <attr name="colorStatusNeutralContainer" format="color" />
+    <attr name="colorOnStatusNeutralContainer" format="color" />
+</resources>

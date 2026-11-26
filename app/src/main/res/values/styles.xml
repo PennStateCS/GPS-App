@@ -228,10 +228,11 @@
 
     <!--
         Status / badge label – compact uppercase chips and inline status text.
-        M3 equivalent: LabelSmall  (11 sp, weight 500).
+        M3 LabelSmall (weight 500) raised from 11 sp to the 12 sp minimum.
         Use for: RTK status badges, accuracy badges, fix-quality chips.
     -->
     <style name="TextAppearance.App.StatusLabel" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:textSize">12sp</item>
         <item name="android:textColor">?attr/colorOnSurface</item>
         <item name="android:textAllCaps">false</item>
     </style>
@@ -243,6 +244,71 @@
     -->
     <style name="TextAppearance.App.Metadata" parent="TextAppearance.Material3.BodySmall">
         <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+
+
+    <!-- ── Named type scale (docs/design-system.md, "Type scale") ────────────────
+         Purpose names over raw sizes. Each delegates to an M3 parent (font, line height,
+         letter spacing) and only overrides size / colour / figures where the scale needs it.
+         Guard: TypeScaleTest (sizes, ≥ 12 sp, tnum) in light and night. -->
+
+    <!-- Major section heading inside a page: 18 sp, medium weight (TitleMedium at 18 sp). -->
+    <style name="TextAppearance.App.SectionHeading" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:textSize">18sp</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <!-- Primary content and interactive labels: 16 sp (= BodyPrimary / M3 BodyLarge). -->
+    <style name="TextAppearance.App.Body" parent="TextAppearance.App.BodyPrimary" />
+
+    <!-- Secondary text, descriptions: 14 sp in the secondary colour (M3 BodyMedium). -->
+    <style name="TextAppearance.App.Secondary" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+    <!--
+        Live / numeric readings: coordinates, elevations, accuracies, distances, correction ages.
+        14 sp with tabular figures so digits keep their width as values change (no jitter).
+        fontFeatureSettings inside a text appearance is honoured from API 28; on older devices
+        also set android:fontFeatureSettings="tnum" on the view (the layouts in this pass do).
+    -->
+    <style name="TextAppearance.App.Reading" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <!-- Dense numeric rows (tables, metric grids, compact cards): 13 sp tabular. -->
+    <style name="TextAppearance.App.ReadingCompact" parent="TextAppearance.App.Reading">
+        <item name="android:textSize">13sp</item>
+    </style>
+
+    <!-- Raw NMEA, debug output, fixed-width technical text only (never ordinary readings). -->
+    <style name="TextAppearance.App.Mono" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <!-- Theme textAppearanceLabelSmall: M3's 11 sp raised to the 12 sp minimum (same line height). -->
+    <style name="TextAppearance.App.LabelSmall" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <!-- GNSS toolbar (navy strip, both themes): label 12 sp, value 14 sp bold tabular. No parent:
+         exactly the attributes item_token.xml used to set inline, so token widths (and the
+         one-line fit) are unchanged. -->
+    <style name="TextAppearance.App.Toolbar.Label" parent="">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/toolbar_on_secondary</item>
+    </style>
+
+    <style name="TextAppearance.App.Toolbar.Value" parent="">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/toolbar_on_primary</item>
+        <item name="android:fontFeatureSettings">tnum</item>
     </style>
 
 
@@ -416,12 +482,14 @@
 
     <!--
         Small data label in an AR camera overlay (sub-values, counts).
-        9 sp white monospace-feel for tight data rows inside the AR card.
-        Use for: the per-button data lines inside the AR toolbar card.
+        12 sp white (was 9 sp, below the 12 sp minimum) for the per-button labels in the 72 dp
+        AR / map tool cards. Tight line height keeps the cards compact; a long label
+        ("My Location") may wrap to two lines rather than clip.
     -->
     <style name="TextAppearance.App.AR.OverlaySmall" parent="TextAppearance.Material3.LabelSmall">
-        <item name="android:textColor">#FFFFFFFF</item>
-        <item name="android:textSize">9sp</item>
+        <item name="android:textColor">@color/ar_overlay_text</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:letterSpacing">0</item>
     </style>
 
     <!--

@@ -72,6 +72,26 @@
         <item name="actionOverflowMenuStyle">@style/Widget.App.OverflowMenu</item>
         <item name="popupMenuStyle">@style/Widget.App.OverflowMenu</item>
 
+        <!-- ── Semantic status roles (values/attrs.xml, docs/design-system.md) ── -->
+        <item name="colorStatusSuccess">@color/status_success</item>
+        <item name="colorStatusSuccessContainer">@color/status_success_container</item>
+        <item name="colorOnStatusSuccessContainer">@color/status_on_success_container</item>
+        <item name="colorStatusWarning">@color/status_warning</item>
+        <item name="colorStatusWarningContainer">@color/status_warning_container</item>
+        <item name="colorOnStatusWarningContainer">@color/status_on_warning_container</item>
+        <item name="colorStatusError">@color/status_error</item>
+        <item name="colorStatusErrorContainer">@color/status_error_container</item>
+        <item name="colorOnStatusErrorContainer">@color/status_on_error_container</item>
+        <item name="colorStatusInfo">@color/status_info</item>
+        <item name="colorStatusInfoContainer">@color/status_info_container</item>
+        <item name="colorOnStatusInfoContainer">@color/status_on_info_container</item>
+        <item name="colorStatusNeutral">@color/status_neutral</item>
+        <item name="colorStatusNeutralContainer">@color/status_neutral_container</item>
+        <item name="colorOnStatusNeutralContainer">@color/status_on_neutral_container</item>
+
+        <!-- ── Type: M3 label-small (11 sp) raised to the 12 sp minimum ── -->
+        <item name="textAppearanceLabelSmall">@style/TextAppearance.App.LabelSmall</item>
+
     </style>
 
     <!--
