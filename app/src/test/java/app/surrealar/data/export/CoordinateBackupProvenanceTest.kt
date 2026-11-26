@@ -126,7 +126,9 @@ class CoordinateBackupProvenanceTest {
 
     @Test
     fun explicitNulls_andUnknownFutureKeys_areAccepted() {
-        val json = """{"format":"surreal-coordinate-backup","schemaVersion":3,"futureRootKey":{"x":1},"coordinates":[
+        // Unknown keys at this app's schema version are forward-compatible by contract (a NEWER schema version is
+        // rejected: CoordinateBackupCompatibilityTest).
+        val json = """{"format":"surreal-coordinate-backup","schemaVersion":1,"futureRootKey":{"x":1},"coordinates":[
             {"id":"f","name":"Future","latitude":41.0,"longitude":-76.0,"altitude":300.0,"timestamp":5,"color":0,
              "icon":"","sourceFrame":null,"receiverFrame":null,"coordinateEpoch":null,"orthometricHeightSource":null,
              "orthometricModel":null,"sourceFrameRealisation":"g2296","heightModelVersion":7,"futureNested":{"a":[1,2]}},

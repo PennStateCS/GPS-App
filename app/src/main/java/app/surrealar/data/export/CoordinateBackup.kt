@@ -16,7 +16,9 @@ import org.json.JSONObject
  *
  * Fields are added as optional keys without a [SCHEMA_VERSION] bump (readers ignore unknown keys
  * and treat absent ones as null/default), e.g. the v14 provenance keys `sourceFrame`,
- * `receiverFrame`, `coordinateEpoch`, `orthometricHeightSource`, `orthometricModel`.
+ * `receiverFrame`, `coordinateEpoch`, `orthometricHeightSource`, `orthometricModel`. A [SCHEMA_VERSION] bump is
+ * reserved for changes in the meaning of existing keys, so a backup with a higher version than this app knows is
+ * rejected with a message ([schemaVersionOf]), never read as an older one.
  */
 object CoordinateBackup {
 
@@ -165,7 +167,10 @@ object CoordinateBackup {
      */
     fun parse(raw: String): ImportResult {
         val root = JSONObject(raw)
-        val schema = root.optInt("schemaVersion", 1)
+        val schema = schemaVersionOf(root)
+        // A full backup without a coordinate list is damaged, not empty (an empty backup has "coordinates": []).
+        val arr = root.optJSONArray("coordinates")
+            ?: throw UnsupportedBackupException("This backup file has no coordinate list (damaged or not a SurReal backup). Nothing was changed.")
         val backupModelIds = root.optJSONArray("models")?.let { arr ->
             (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("id")?.takeIf { id -> id.isNotBlank() } }
         }?.toHashSet() ?: hashSetOf()
@@ -174,9 +179,12 @@ object CoordinateBackup {
         val skipped = mutableListOf<String>()
         val missingModels = mutableListOf<String>()
 
-        val arr = root.optJSONArray("coordinates") ?: JSONArray()
         for (i in 0 until arr.length()) {
-            val o = arr.optJSONObject(i) ?: continue
+            // A non-object entry (null, number, text) is reported like any other malformed row, never dropped silently.
+            val o = arr.optJSONObject(i) ?: run {
+                skipped += "entry #$i: not a coordinate object"
+                null
+            } ?: continue
             // One bad row (e.g. a number field holding text) is skipped and reported instead of
             // aborting the whole import. Only the exception type is kept: messages can quote values.
             val c = try {
@@ -212,6 +220,30 @@ object CoordinateBackup {
         }
         return ImportResult(schema, coordinates, skipped, missingModels)
     }
+
+    /**
+     * The backup's schema version, or [UnsupportedBackupException] when this app cannot read it. Absent → 1 (the
+     * first backups). Unknown KEYS are forward-compatible by contract (see the class doc), so a backup written by a
+     * newer app at this [SCHEMA_VERSION] still imports; a HIGHER version means the meaning of existing keys changed
+     * (that is the only reason to bump it), and reading it as this version could silently misplace points, so it is
+     * rejected with a message before anything is written.
+     */
+    internal fun schemaVersionOf(root: JSONObject): Int {
+        if (!root.has("schemaVersion") || root.isNull("schemaVersion")) return 1
+        val v = root.optDouble("schemaVersion", Double.NaN)
+        if (!v.isFinite() || v != Math.floor(v) || v < 1) {
+            throw UnsupportedBackupException("This backup has an unrecognised format version " +
+                "(${root.opt("schemaVersion")}). Nothing was changed.")
+        }
+        if (v > SCHEMA_VERSION) {
+            throw UnsupportedBackupException("This backup was made by a newer version of SurReal AR (backup format " +
+                "${v.toLong()}; this app reads up to $SCHEMA_VERSION). Update the app to import it. Nothing was changed.")
+        }
+        return v.toInt()
+    }
+
+    /** A backup this app must not import (newer schema, damaged structure). The message is user-facing. */
+    class UnsupportedBackupException(message: String) : IllegalArgumentException(message)
 
     private fun jsonToCoord(o: JSONObject): Coordinate? {
         val id = o.optString("id").takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString()

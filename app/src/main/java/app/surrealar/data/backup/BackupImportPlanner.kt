@@ -44,6 +44,24 @@ data class BackupImportPlan(
     val needsPartialReplaceConfirmation: Boolean
         get() = mode == ImportMode.REPLACE && !isNoOp && skippedCount > 0
 
+    /**
+     * Any import that would skip invalid backup rows: the user sees the counts and the skipped entries before
+     * anything is written (a replace with local points uses [needsPartialReplaceConfirmation] instead).
+     */
+    val needsPartialImportConfirmation: Boolean
+        get() = !isNoOp && skippedCount > 0
+
+    /**
+     * The skipped entries for a confirmation dialog: at most [max] lines ("name (id): reason"), then "… and N more".
+     * Empty when nothing is skipped.
+     */
+    fun skippedPreview(max: Int = 5): String {
+        if (skippedInvalid.isEmpty()) return ""
+        val shown = skippedInvalid.take(max).joinToString("\n") { "• $it" }
+        val more = skippedInvalid.size - max
+        return if (more > 0) "$shown\n… and $more more" else shown
+    }
+
     /** Final, user-facing summary line. */
     fun summaryMessage(): String {
         if (cancelled) return "Import canceled: existing coordinates kept"

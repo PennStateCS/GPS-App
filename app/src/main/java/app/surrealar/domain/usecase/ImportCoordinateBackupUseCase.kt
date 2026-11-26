@@ -37,19 +37,28 @@ class ImportCoordinateBackupUseCase @Inject constructor(
      * @param confirmPartialReplace asked, with the plan and the number of local points that would be
      *   deleted, before a replace that skips invalid rows. Defaults to CANCEL, so a caller that can't
      *   ask never wipes data on a damaged backup.
+     * @param confirmPartialImport asked before any OTHER import that skips invalid rows (a merge, or a replace on a
+     *   device with no points; never in addition to [confirmPartialReplace]): true imports
+     *   the valid rows, false writes nothing. Defaults to true (a merge never deletes anything and the skipped rows
+     *   are reported in the result); the Settings import asks the user with the skipped entries listed.
+     * @throws CoordinateBackup.UnsupportedBackupException for a newer schema version or a damaged structure,
+     *   before anything is written.
      */
     suspend operator fun invoke(
         raw: String,
         replace: Boolean,
+        // Before confirmPartialReplace so a trailing lambda still means the partial-replace answer.
+        confirmPartialImport: suspend (plan: BackupImportPlan) -> Boolean = { true },
         confirmPartialReplace: suspend (plan: BackupImportPlan, existingCount: Int) -> PartialReplaceDecision =
             { _, _ -> PartialReplaceDecision.CANCEL },
     ): BackupImportPlan =
         app.surrealar.util.diagnostics.DataOpLog.run("Backup import", if (replace) "json/replace" else "json/merge",
-            { it.toInsert.size }) { plan(raw, replace, confirmPartialReplace) }
+            { it.toInsert.size }) { plan(raw, replace, confirmPartialReplace, confirmPartialImport) }
 
     private suspend fun plan(
         raw: String, replace: Boolean,
         confirmPartialReplace: suspend (BackupImportPlan, Int) -> PartialReplaceDecision,
+        confirmPartialImport: suspend (BackupImportPlan) -> Boolean,
     ): BackupImportPlan = withContext(Dispatchers.IO) {
         val existingIds = coordinateRepository.getAllCoordinatesList().mapTo(HashSet()) { it.id }
         // The backup carries model metadata but not the model files; missing-model detection checks
@@ -82,6 +91,9 @@ class ImportCoordinateBackupUseCase @Inject constructor(
                     plan = BackupImportPlanner.plan(parsed, skipped, existingIds, existingModelIds, ImportMode.MERGE)
                 PartialReplaceDecision.CANCEL -> return@withContext plan.copy(cancelled = true)
             }
+        } else if (plan.needsPartialImportConfirmation && !confirmPartialImport(plan)) {
+            // Partial import shown before committing: the user declined, nothing is written.
+            return@withContext plan.copy(cancelled = true)
         }
 
         if (!plan.isNoOp) {

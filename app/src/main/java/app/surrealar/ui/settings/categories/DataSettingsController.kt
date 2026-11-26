@@ -75,7 +75,9 @@ internal class DataSettingsController(
     /** The import use case call; a parameter so tests can drive the partial-replace confirmation. */
     private val runImport: suspend (raw: String, replace: Boolean,
                                     confirm: suspend (app.surrealar.data.backup.BackupImportPlan, Int) -> PartialReplaceDecision,
-    ) -> app.surrealar.data.backup.BackupImportPlan = { raw, replace, confirm -> importBackup(raw, replace, confirm) },
+                                    confirmPartial: suspend (app.surrealar.data.backup.BackupImportPlan) -> Boolean,
+    ) -> app.surrealar.data.backup.BackupImportPlan =
+        { raw, replace, confirm, confirmPartial -> importBackup(raw, replace, confirmPartialImport = confirmPartial, confirmPartialReplace = confirm) },
 ) : SettingsCategoryController {
 
     // Coordinate backup import state (survives category switches, like the fragment fields it replaces)
@@ -285,7 +287,8 @@ internal class DataSettingsController(
                     .setTitle("Backup has invalid entries")
                     .setMessage("Only ${plan.insertCount} of ${plan.insertCount + plan.skippedCount} entries in this backup " +
                         "are valid (${plan.skippedCount} would be skipped).\n\nReplace deletes all $existingCount " +
-                        "coordinates on this device and keeps only the ${plan.insertCount} valid ones. This cannot be undone.")
+                        "coordinates on this device and keeps only the ${plan.insertCount} valid ones. This cannot be undone." +
+                        "\n\nSkipped:\n${plan.skippedPreview()}")
                     .setPositiveButton("Merge instead") { _, _ -> answer(PartialReplaceDecision.MERGE_INSTEAD) }
                     .setNeutralButton("Replace anyway") { _, _ -> answer(PartialReplaceDecision.REPLACE) }
                     .setNegativeButton(R.string.import_cancel) { _, _ -> answer(PartialReplaceDecision.CANCEL) }
@@ -298,6 +301,32 @@ internal class DataSettingsController(
                 cont.invokeOnCancellation { dialog.dismiss() }
             }
         }.also { DiagnosticsLogger.i(DiagTags.DATA, "Backup replace confirmation answered decision=$it") }
+    }
+
+    /**
+     * Confirmation for any other import that skips invalid rows (merge, or replace on an empty device), shown before
+     * anything is written, with the skipped entries listed. Cancel (or a dismissed dialog / gone or destroyed
+     * fragment) writes nothing.
+     */
+    private suspend fun confirmPartialImport(plan: app.surrealar.data.backup.BackupImportPlan): Boolean {
+        DiagnosticsLogger.w(DiagTags.DATA, "Backup import needs confirmation valid=${plan.insertCount} skipped=${plan.skippedCount}")
+        return withContext(Dispatchers.Main) {
+            if (!fragment.isAdded) return@withContext false
+            kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+                fun answer(ok: Boolean) {
+                    if (cont.isActive) cont.resumeWith(Result.success(ok))
+                }
+                val dialog = AlertDialog.Builder(fragment.requireContext())
+                    .setTitle("Backup has invalid entries")
+                    .setMessage(partialImportMessage(plan))
+                    .setPositiveButton("Import ${plan.insertCount} valid") { _, _ -> answer(true) }
+                    .setNegativeButton(R.string.import_cancel) { _, _ -> answer(false) }
+                    .setOnCancelListener { answer(false) }
+                    .show()
+                dismissWhenFragmentDestroyed(dialog) { answer(false) }
+                cont.invokeOnCancellation { dialog.dismiss() }
+            }
+        }.also { DiagnosticsLogger.i(DiagTags.DATA, "Backup partial import confirmation answered import=$it") }
     }
 
     private fun launchImportCoordinates(appContext: Context, uri: Uri, replace: Boolean) {
@@ -324,7 +353,8 @@ internal class DataSettingsController(
                 throw e
             }
             showImportProgress(true, 70, "Writing…")
-            runImport(raw, replace) { plan, existingCount -> confirmPartialReplace(plan, existingCount) }
+            runImport(raw, replace, { plan, existingCount -> confirmPartialReplace(plan, existingCount) },
+                { plan -> confirmPartialImport(plan) })
         }.onSuccess { plan ->
             showImportProgress(false, 100, when {
                 plan.cancelled -> "Canceled"
@@ -381,5 +411,11 @@ internal class DataSettingsController(
             if (r.unavailableCount == 0) "Points CSV exported: ${r.rowCount} points"
             else "Points CSV exported: ${r.rowCount} points; ${r.unavailableCount} without a position in the selected " +
                 "coordinate system (blank, reason in the System column)"
+
+        /** Body of the partial-import confirmation: the counts, then the skipped entries (first few). */
+        fun partialImportMessage(plan: app.surrealar.data.backup.BackupImportPlan): String =
+            "Only ${plan.insertCount} of ${plan.insertCount + plan.skippedCount} entries in this backup are valid. " +
+                "${plan.skippedCount} would be skipped and not imported:\n\n${plan.skippedPreview()}\n\n" +
+                "Nothing has been imported yet."
     }
 }
