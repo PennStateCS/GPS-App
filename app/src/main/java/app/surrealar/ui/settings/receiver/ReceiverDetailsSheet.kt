@@ -38,12 +38,23 @@ import kotlinx.coroutines.launch
  * address; "Copy address" copies it only on the user's explicit tap. The receiver-reported vendor details (uptime,
  * temperature, power, storage) are a collapsed section. "Disconnect receiver" is always confirmed: it removes the
  * saved address/port and, during a capture, stops it.
+ *
+ * Live updates (NMEA rate, correction age, battery…) change row VALUES in place: the row views are kept, keyed by
+ * section + label ([DetailsRowKeys]), so scroll position, expanded sections and accessibility focus survive. The views
+ * are rebuilt only when the layout itself changes (rows added/removed, a section expanded, one/two columns).
  */
 class ReceiverDetailsSheet : BottomSheetDialogFragment() {
 
     private lateinit var deps: ReceiverUiDeps
     private var rows: LinearLayout? = null
     private var lastSections: List<DetailSection> = emptyList()
+    /** Layout the current views were built for; null = nothing built yet. */
+    private var builtShape: List<DetailsRowKeys.SectionShape>? = null
+    private var builtTwoColumns = false
+    /** Row views by key (see [DetailsRowKeys]), for in-place value updates. */
+    private val rowViews = mutableMapOf<String, View>()
+    /** Collapsible section headers by title, to restore accessibility focus after a toggle. */
+    private val headerViews = mutableMapOf<Int, TextView>()
     /** Titles of the collapsible sections the user expanded (kept across rotation). */
     private val expanded = mutableSetOf<Int>()
 
@@ -76,6 +87,9 @@ class ReceiverDetailsSheet : BottomSheetDialogFragment() {
 
     override fun onDestroyView() {
         rows = null
+        builtShape = null
+        rowViews.clear()
+        headerViews.clear()
         super.onDestroyView()
     }
 
@@ -136,16 +150,35 @@ class ReceiverDetailsSheet : BottomSheetDialogFragment() {
         view?.findViewById<View>(R.id.btn_details_disconnect)?.isVisible = i.state.selectedSource == LocationSourceType.EXTERNAL
         if (sections == lastSections && container.childCount > 0) return
         lastSections = sections
-        rebuild(container, sections)
+        val shape = DetailsRowKeys.shape(sections, expanded)
+        if (shape == builtShape && twoColumns() == builtTwoColumns && container.childCount > 0) {
+            updateInPlace(container.context, sections)
+        } else rebuild(container, sections)
+    }
+
+    /** Same layout: only the values changed. Each row view is updated where it is (no add/remove, no focus loss). */
+    private fun updateInPlace(ctx: android.content.Context, sections: List<DetailSection>) {
+        for (sec in sections) {
+            if (sec.collapsible && sec.title !in expanded) continue
+            DetailsRowKeys.keyed(sec).forEach { (key, row) -> rowViews[key]?.let { bindRow(ctx, it, row) } }
+        }
     }
 
     /** Two columns from [ReceiverPickerSheet.EXPANDED_FROM_DP] (tablets); one column on phones. */
     private fun twoColumns(): Boolean = resources.configuration.screenWidthDp >= ReceiverPickerSheet.EXPANDED_FROM_DP
 
-    private fun rebuild(container: LinearLayout, sections: List<DetailSection>) {
+    private fun rebuild(container: LinearLayout, sections: List<DetailSection>, focusTitle: Int? = null) {
         val ctx = container.context
+        // Keep the reader where it was: the scroll offset survives the rebuild, and the toggled header gets focus back.
+        val scroll = view as? androidx.core.widget.NestedScrollView
+        val scrollY = scroll?.scrollY ?: 0
+        builtShape = DetailsRowKeys.shape(sections, expanded)
+        builtTwoColumns = twoColumns()
+        rowViews.clear()
+        headerViews.clear()
         container.removeAllViews()
-        if (!twoColumns()) { buildSections(container, sections); return }
+        restoreAfterRebuild(scroll, scrollY, focusTitle)
+        if (!builtTwoColumns) { buildSections(container, sections); return }
         // Two balanced columns: whole sections, in order, each placed in the shorter column so far.
         val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
         val cols = List(2) {
@@ -173,23 +206,44 @@ class ReceiverDetailsSheet : BottomSheetDialogFragment() {
                         if (open) R.string.details_section_collapse_cd else R.string.details_section_expand_cd, title)
                     it.setOnClickListener {
                         if (!expanded.remove(sec.title)) expanded += sec.title
-                        rows?.let { rebuild(it, lastSections) }
+                        rows?.let { c -> rebuild(c, lastSections, focusTitle = sec.title) }
                     }
+                    headerViews[sec.title] = it
                 } else it.text = title
                 container.addView(it)
             }
             if (!open) continue
-            for (r in sec.rows) {
+            for ((key, r) in DetailsRowKeys.keyed(sec)) {
                 val v = inflater.inflate(R.layout.item_receiver_detail_row, container, false)
-                val label = r.labelOf(ctx)
-                v.findViewById<TextView>(R.id.text_detail_label).text = label
-                v.findViewById<TextView>(R.id.text_detail_value).text = r.value
-                v.findViewById<TextView>(R.id.text_detail_note).apply { text = r.note; isVisible = !r.note.isNullOrEmpty() }
-                val origin = r.origin?.let { ReceiverDetailsPresenter.originText(ctx, it) }
-                v.findViewById<TextView>(R.id.text_detail_origin).apply { text = origin; isVisible = origin != null }
-                v.contentDescription = listOfNotNull(label, r.value, origin, r.note).joinToString(", ")
+                bindRow(ctx, v, r)
+                rowViews[key] = v
                 container.addView(v)
             }
+        }
+    }
+
+    /** Sets a row's texts, touching only those that changed (no needless relayout or accessibility events). */
+    private fun bindRow(ctx: android.content.Context, v: View, r: DetailRow) {
+        val label = r.labelOf(ctx)
+        val origin = r.origin?.let { ReceiverDetailsPresenter.originText(ctx, it) }
+        fun TextView.set(value: CharSequence?, visible: Boolean = true) {
+            if (text?.toString() != value?.toString()) text = value
+            if (isVisible != visible) isVisible = visible
+        }
+        v.findViewById<TextView>(R.id.text_detail_label).set(label)
+        v.findViewById<TextView>(R.id.text_detail_value).set(r.value)
+        v.findViewById<TextView>(R.id.text_detail_note).set(r.note, !r.note.isNullOrEmpty())
+        v.findViewById<TextView>(R.id.text_detail_origin).set(origin, origin != null)
+        val cd = listOfNotNull(label, r.value, origin, r.note).joinToString(", ")
+        if (v.contentDescription?.toString() != cd) v.contentDescription = cd
+    }
+
+    private fun restoreAfterRebuild(scroll: androidx.core.widget.NestedScrollView?, scrollY: Int, focusTitle: Int?) {
+        scroll?.post {
+            if (rows == null) return@post
+            scroll.scrollTo(0, scrollY)
+            focusTitle?.let { headerViews[it] }?.performAccessibilityAction(
+                android.view.accessibility.AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS, null)
         }
     }
 
@@ -230,6 +284,30 @@ class ReceiverDetailsSheet : BottomSheetDialogFragment() {
         private const val KEY_EXPANDED = "expanded_sections"
         /** Maximum sheet width with two columns (tablets). */
         const val WIDE_MAX_WIDTH_DP = 1200
+    }
+}
+
+/**
+ * Stable keys for the details rows (pure). A row is keyed by its section title and its label (resource id, or the
+ * receiver-named label for vendor details), with a counter for repeated labels, so the same row keeps its view while
+ * its value changes. [shape] is the layout the views depend on: when it is unchanged, values are updated in place.
+ */
+internal object DetailsRowKeys {
+    data class SectionShape(val title: Int, val open: Boolean, val rowKeys: List<String>)
+
+    fun keyed(sec: DetailSection): List<Pair<String, DetailRow>> {
+        val seen = mutableMapOf<String, Int>()
+        return sec.rows.map { r ->
+            val base = "${sec.title}/" + (if (r.label != 0) "r${r.label}" else "t${r.labelText.orEmpty()}")
+            val n = (seen[base] ?: 0) + 1
+            seen[base] = n
+            (if (n == 1) base else "$base#$n") to r
+        }
+    }
+
+    fun shape(sections: List<DetailSection>, expanded: Set<Int>): List<SectionShape> = sections.map { sec ->
+        val open = !sec.collapsible || sec.title in expanded
+        SectionShape(sec.title, open, if (open) keyed(sec).map { it.first } else emptyList())
     }
 }
 

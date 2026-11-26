@@ -11,8 +11,8 @@ import com.google.android.material.color.MaterialColors
 
 /**
  * Binds a [ReceiverCardModel] to `view_receiver_card.xml`. Colours come from theme roles only (light/dark). Only end
- * states (Connected / Active / Failed / Unavailable) are announced for accessibility, once each: never the first bind,
- * Testing / Connecting / Reconnecting, nor a Reconnecting -> Connected flap back to the state last announced.
+ * states (Connected / In use / Failed / Unavailable) are announced for accessibility, once each: never the first bind,
+ * Selected / Testing / Connecting / Reconnecting, nor a Reconnecting -> Connected flap back to the state last announced.
  */
 class ReceiverCardBinder(
     private val root: View,
@@ -61,13 +61,13 @@ class ReceiverCardBinder(
 
         modelGroup.isVisible = m.modelLabel != null
         model.text = m.modelLabel
-        val originText = m.modelOrigin?.let { originLabel(it) }
+        val originText = m.modelOrigin?.let { modelOriginLabel(it) }
         modelOrigin.text = originText
         modelGroup.contentDescription = if (m.modelLabel != null && originText != null)
             ctx.getString(R.string.receiver_model_origin_cd, m.modelLabel, originText) else null
 
         // Connection state chip.
-        val stateText = stateText(m.connection)
+        val stateText = if (m.streaming) ctx.getString(R.string.receiver_state_streaming) else stateText(m.connection)
         stateChip.text = stateText
         stateChip.contentDescription = ctx.getString(R.string.receiver_state_cd, stateText)
         val (bg, fg) = when (m.connection) {
@@ -75,6 +75,8 @@ class ReceiverCardBinder(
                 com.google.android.material.R.attr.colorPrimaryContainer to com.google.android.material.R.attr.colorOnPrimaryContainer
             CardConnection.Testing, CardConnection.Connecting, CardConnection.Reconnecting ->
                 com.google.android.material.R.attr.colorTertiaryContainer to com.google.android.material.R.attr.colorOnTertiaryContainer
+            CardConnection.Selected ->
+                com.google.android.material.R.attr.colorSurfaceVariant to com.google.android.material.R.attr.colorOnSurfaceVariant
             CardConnection.Unavailable, is CardConnection.Failed ->
                 com.google.android.material.R.attr.colorErrorContainer to com.google.android.material.R.attr.colorOnErrorContainer
         }
@@ -154,6 +156,18 @@ class ReceiverCardBinder(
         else -> ctx.getString(R.string.receiver_source_external)
     }
 
+    /**
+     * The model line's tag: what kind of identity the label is. Only a model the connected receiver reported is
+     * "Receiver-confirmed"; a profile is never presented as a verified identity.
+     */
+    fun modelOriginLabel(o: ValueOrigin): String = ctx.getString(when (o) {
+        ValueOrigin.REPORTED -> R.string.receiver_model_confirmed
+        ValueOrigin.SET_BY_USER -> R.string.receiver_model_profile_user
+        ValueOrigin.DEFAULT -> R.string.receiver_model_profile_default
+        ValueOrigin.EARLIER_REPORT -> R.string.receiver_model_previous
+        ValueOrigin.UNKNOWN -> R.string.receiver_model_unknown
+    })
+
     fun originLabel(o: ValueOrigin): String = ctx.getString(when (o) {
         ValueOrigin.REPORTED -> R.string.receiver_origin_reported
         ValueOrigin.SET_BY_USER -> R.string.receiver_origin_user
@@ -180,7 +194,7 @@ class ReceiverCardBinder(
         /** States the user waits for (announced); Testing / Connecting / Reconnecting are transient. */
         fun isEndState(c: CardConnection): Boolean = when (c) {
             CardConnection.Connected, CardConnection.DeviceGnss, CardConnection.Unavailable, is CardConnection.Failed -> true
-            CardConnection.Testing, CardConnection.Connecting, CardConnection.Reconnecting -> false
+            CardConnection.Selected, CardConnection.Testing, CardConnection.Connecting, CardConnection.Reconnecting -> false
         }
 
         /** Announce [current] only when it is an end state other than the one last announced. */
@@ -194,6 +208,7 @@ class ReceiverCardBinder(
             CardConnection.Connected -> ctx.getString(R.string.receiver_state_connected)
             CardConnection.Reconnecting -> ctx.getString(R.string.receiver_state_reconnecting)
             CardConnection.Unavailable -> ctx.getString(R.string.receiver_state_unavailable)
+            CardConnection.Selected -> ctx.getString(R.string.receiver_state_selected)
             is CardConnection.Failed -> ctx.getString(R.string.receiver_state_failed, ReceiverUi.shortReason(ctx, c.error))
         }
     }

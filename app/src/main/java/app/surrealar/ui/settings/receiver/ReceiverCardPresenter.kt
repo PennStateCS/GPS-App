@@ -39,8 +39,13 @@ sealed interface CardConnection {
     data object Connecting : CardConnection
     data object Connected : CardConnection
     data object Reconnecting : CardConnection
-    /** External selected but nothing is streaming (and no failed test for the saved receiver). */
+    /** External selected and the adapter is active, but its link is down (disconnected / error). */
     data object Unavailable : CardConnection
+    /**
+     * External selected and a receiver is saved, but no connection is running for it (before the first connect, or the
+     * saved receiver is not the active source): it is only the selection, not proof of a working receiver.
+     */
+    data object Selected : CardConnection
     /** The test for the saved receiver failed. */
     data class Failed(val error: ConnectError) : CardConnection
 }
@@ -79,6 +84,8 @@ data class ReceiverCardModel(
     val modelLabel: String?,
     val modelOrigin: ValueOrigin?,
     val connection: CardConnection,
+    /** Connected AND a live position from that receiver is arriving ("Connected and streaming"). */
+    val streaming: Boolean = false,
     /** Fix quality and satellites; null when no live position from the selected source. */
     val fix: CardFix?,
     val satsUsed: Int?,
@@ -139,6 +146,7 @@ object ReceiverCardPresenter {
             modelLabel = modelLabel,
             modelOrigin = modelOrigin,
             connection = connection,
+            streaming = connection == CardConnection.Connected && liveFix != null,
             fix = liveFix?.let { fixOf(it.rtkStatus) },
             satsUsed = if (liveFix != null) used else null,
             satsVisible = if (liveFix != null) visible else null,
@@ -147,7 +155,8 @@ object ReceiverCardPresenter {
             mismatch = if (external) s.mismatch else null,
             attemptLine = attemptLine(s, external, connection, streaming),
             canRetry = external && s.savedTarget != null && !s.busy &&
-                (connection == CardConnection.Unavailable || connection is CardConnection.Failed),
+                (connection == CardConnection.Unavailable || connection == CardConnection.Selected ||
+                    connection is CardConnection.Failed),
             busy = s.busy,
         )
     }
@@ -174,8 +183,11 @@ object ReceiverCardPresenter {
         if (!external) return CardConnection.DeviceGnss
         val failed = s.attempt as? ConnectionAttempt.Failed
         if (s.activeProvider != ProviderChoice.EXTERNAL_TCP) {
-            return if (failed != null && (s.savedTarget == null || failed.target == s.savedTarget)) CardConnection.Failed(failed.error)
-            else CardConnection.Unavailable
+            return when {
+                failed != null && (s.savedTarget == null || failed.target == s.savedTarget) -> CardConnection.Failed(failed.error)
+                s.savedTarget != null -> CardConnection.Selected
+                else -> CardConnection.Unavailable
+            }
         }
         return when (s.link) {
             ConnectionState.CONNECTED -> CardConnection.Connected

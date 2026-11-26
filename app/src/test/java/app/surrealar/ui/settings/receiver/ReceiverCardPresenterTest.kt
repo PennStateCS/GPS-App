@@ -168,4 +168,26 @@ class ReceiverCardPresenterTest {
         }
         assertEquals(listOf(CardConnection.Unavailable, CardConnection.Connected, CardConnection.Failed(ConnectError.NoData(9001))), spoken)
     }
+
+    @Test fun `a saved receiver with no connection running is only Selected (not Unavailable, not Connected) and offers Retry`() {
+        val m = present(connected().copy(activeProvider = ProviderChoice.INTERNAL, link = null))
+        assertEquals(CardConnection.Selected, m.connection)
+        assertTrue(m.canRetry)
+        assertFalse(ReceiverCardBinder.isEndState(CardConnection.Selected))
+    }
+
+    @Test fun `streaming only when connected AND a live position from the receiver arrives`() {
+        assertTrue(present(connected(), fix()).streaming)
+        assertFalse("connected, no position", present(connected(), null).streaming)
+        assertFalse("tablet fix is not the receiver's", present(connected(), fix(Provider.INTERNAL)).streaming)
+        assertFalse("reconnecting", present(connected().copy(link = ConnectionState.RECONNECTING), fix()).streaming)
+    }
+
+    @Test fun `a profile is never presented as a confirmed model`() {
+        assertEquals(ValueOrigin.SET_BY_USER, present(connected(origin = ProfileOrigin.USER)).modelOrigin)
+        assertEquals(ValueOrigin.DEFAULT, present(connected(origin = ProfileOrigin.DEFAULT)).modelOrigin)
+        assertEquals(ValueOrigin.EARLIER_REPORT, present(connected(origin = ProfileOrigin.RECEIVER)).modelOrigin)
+        assertEquals(ValueOrigin.REPORTED,
+            present(connected(ExternalReceiverProfile.REACH_RS4_PRO, ProfileOrigin.RECEIVER, rs4ProIdentity())).modelOrigin)
+    }
 }

@@ -45,8 +45,9 @@ import kotlinx.coroutines.flow.first
 /**
  * Settings → Receiver (Phase 5 layout): the receiver card at the top (location source, receiver name and model with
  * where it comes from, connection state, fix + satellites, battery when reported, profile-mismatch banner,
- * "Change receiver" and "Receiver details"), then the RS4 / RS4 Pro tilt setting and antenna setup (external
- * receiver) or the tablet antenna height (tablet GNSS), then mock location publishing.
+ * "Change receiver" and "Receiver details"), then receiver setup (RS4 / RS4 Pro compensated NMEA output, pole height)
+ * or the tablet antenna height (tablet GNSS), then a collapsible "Advanced" card (camera offset, phase-centre override,
+ * mock location publishing, troubleshooting).
  *
  * Connecting, switching and identification all live in the app-scoped [ReceiverConnectionController] (test before
  * switch). Host / port / profile / Connect and the source radio moved to the picker sheet ([ReceiverPickerSheet]) and
@@ -96,6 +97,11 @@ internal class ReceiverSettingsController(
     /** Last source the category list was refreshed for. */
     private var lastSource: LocationSourceType? = null
 
+    companion object {
+        /** The "Advanced" card is expanded: remembered for the app session (process), not persisted. */
+        @Volatile internal var advancedExpanded: Boolean = false
+    }
+
     override fun onDestroyView() {
         // The views are gone: drop them. categoryScope is already cancelled by the host; a connect attempt is
         // app-scoped (ReceiverConnectionController) and keeps running.
@@ -121,6 +127,7 @@ internal class ReceiverSettingsController(
         val view = inflater.inflate(R.layout.content_settings_location, container, false)
         try { setupReceiverCard(view, categoryScope) } catch (e: Exception) { settingsError("Settings section setup failed section=receiverCard", e) }
         try { setupLocationSourceUi(view, categoryScope) } catch (e: Exception) { settingsError("Settings section setup failed section=locationSource", e) }
+        try { setupAdvancedSection(view) } catch (e: Exception) { settingsError("Settings section setup failed section=advanced", e) }
         contentView = view
         return view
     }
@@ -188,6 +195,7 @@ internal class ReceiverSettingsController(
     private fun applySource(view: View, s: ReceiverSelectionState) {
         val external = s.selectedSource == LocationSourceType.EXTERNAL
         view.findViewById<View>(R.id.card_external_receiver_setup)?.isVisible = external
+        view.findViewById<View>(R.id.group_advanced_external)?.isVisible = external
         view.findViewById<View>(R.id.group_internal_gps)?.isVisible = !external
         // Tilt (compensated output + status) only for receivers with an IMU (RS4 / RS4 Pro).
         view.findViewById<View>(R.id.group_receiver_tilt)?.isVisible =
@@ -198,6 +206,35 @@ internal class ReceiverSettingsController(
             lastSource = s.selectedSource
             refreshCategoriesForSource(s.selectedSource)
         }
+    }
+
+    // ───────────────────────────── Advanced (collapsible) ─────────────────────
+    /**
+     * The "Advanced" card: camera offset and phase-centre override (external receiver), mock location publishing and
+     * troubleshooting. Collapsed by default; the state is remembered for the app session ([advancedExpanded]). A mock
+     * location error expands it so the banner is never hidden. The RS4 compensated-output setting is never in here.
+     */
+    private fun setupAdvancedSection(view: View) {
+        val toggle = view.findViewById<View>(R.id.btn_receiver_advanced_toggle) ?: return
+        toggle.setOnClickListener { setAdvancedExpanded(view, !advancedExpanded) }
+        setAdvancedExpanded(view, advancedExpanded)
+        view.findViewById<View>(R.id.btn_receiver_open_diagnostics)?.setOnClickListener {
+            runCatching {
+                androidx.navigation.fragment.NavHostFragment.findNavController(fragment).navigate(R.id.nav_development)
+            }.onFailure {
+                settingsWarn("Receiver settings: diagnostics page navigation failed", it)
+                android.widget.Toast.makeText(fragment.requireContext(), R.string.details_diagnostics_unavailable,
+                    android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun setAdvancedExpanded(view: View, expanded: Boolean) {
+        advancedExpanded = expanded
+        view.findViewById<View>(R.id.group_receiver_advanced)?.isVisible = expanded
+        view.findViewById<View>(R.id.image_receiver_advanced_chevron)?.rotation = if (expanded) 270f else 90f
+        view.findViewById<View>(R.id.btn_receiver_advanced_toggle)?.contentDescription = fragment.getString(
+            if (expanded) R.string.receiver_advanced_collapse_cd else R.string.receiver_advanced_expand_cd)
     }
 
     // ───────────────────────────── RS4 / RS4 Pro tilt ─────────────────────────
@@ -497,6 +534,7 @@ internal class ReceiverSettingsController(
                                 "Mock location provider error. See Logcat for details."
                         }
                         errorBanner?.visibility = View.VISIBLE
+                        if (isShown(view)) setAdvancedExpanded(view, true)   // never hide the error in a collapsed section
                         view.findViewById<TextView>(R.id.text_mock_location_error)?.text = msg
                         if (error != lastShownError) {
                             lastShownError = error

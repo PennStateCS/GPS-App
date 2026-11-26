@@ -139,4 +139,23 @@ class HomeViewModel @Inject constructor(
         started      = SharingStarted.WhileSubscribed(5_000),
         initialValue = fixSwitchboard.sky.value
     )
+
+    /**
+     * The live fix itself (current provider only; null on a provider switch and when fixes stop). The Field Status
+     * card needs its [Fix.provider] to tell the selected source from the source that actually produced the fix.
+     */
+    val liveFix: StateFlow<Fix?> = fixSwitchboard.currentFix.stateIn(
+        scope        = viewModelScope,
+        started      = SharingStarted.WhileSubscribed(5_000),
+        initialValue = fixSwitchboard.currentFix.value
+    )
+
+    /** [FixSnapshot] for [fix] (an empty snapshot for null), as [fixSnapshot] maps it. */
+    fun snapshotOf(fix: Fix?): FixSnapshot = fix?.toFixSnapshot() ?: emptySnapshot
+
+    /**
+     * Recent (last 60 s) NMEA parse errors for the Field Status card, from the cumulative
+     * [DiagnosticData.totalParseErrors] (whose meaning the Developer page keeps). Held here so it survives rotation.
+     */
+    val parseErrorWindow = RecentCountWindow()
 }

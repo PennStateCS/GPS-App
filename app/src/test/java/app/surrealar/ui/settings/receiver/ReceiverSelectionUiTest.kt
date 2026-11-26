@@ -118,9 +118,9 @@ class ReceiverSelectionUiTest {
         c.bind(ReceiverCardPresenter.present(ReceiverUiFixtures.internal, null, null, null,
             io.github.pennstatecs.geokit.gnss.receiver.ReceiverCapabilities.NONE))
         assertEquals("Tablet GNSS", c.source.text.toString())
-        assertEquals("Active", c.stateChip.text.toString())
+        assertEquals("In use", c.stateChip.text.toString())
         assertEquals(View.GONE, c.modelGroup.visibility)
-        assertEquals("Connection state: Active", c.stateChip.contentDescription)
+        assertEquals("Connection state: In use", c.stateChip.contentDescription)
 
         val testing = ReceiverUiFixtures.connected().copy(activeProvider = ProviderChoice.INTERNAL, link = ConnectionState.DISCONNECTED,
             attempt = ConnectionAttempt.Testing(1, ReceiverUiFixtures.TARGET, null))
@@ -131,9 +131,9 @@ class ReceiverSelectionUiTest {
         c.bind(ReceiverCardPresenter.present(verified, ReceiverUiFixtures.fix(), ReceiverUiFixtures.sky(18, 24),
             io.github.pennstatecs.geokit.gnss.receiver.ReceiverBattery(80, false), io.github.pennstatecs.geokit.gnss.receiver.ReceiverCapabilities.ALL))
         assertEquals("External receiver", c.source.text.toString())
-        assertEquals("Connected", c.stateChip.text.toString())
+        assertEquals("Connected and streaming", c.stateChip.text.toString())
         assertEquals("Emlid Reach RS4 Pro", c.model.text.toString())
-        assertEquals("Reported by receiver", c.modelOrigin.text.toString())
+        assertEquals("Receiver-confirmed model", c.modelOrigin.text.toString())
         assertEquals("RTK Fix", c.fixChip.text.toString())
         assertEquals("18/24 sats", c.satsChip.text.toString())
         assertEquals("Battery 80%", c.batteryChip.text.toString())
@@ -142,7 +142,8 @@ class ReceiverSelectionUiTest {
         c.bind(ReceiverCardPresenter.present(ReceiverUiFixtures.connected(origin = ProfileOrigin.USER), null, null, null,
             io.github.pennstatecs.geokit.gnss.receiver.ReceiverCapabilities.ALL))
         assertEquals("Emlid Reach RS2+", c.model.text.toString())
-        assertEquals("Set by you", c.modelOrigin.text.toString())
+        assertEquals("a profile is never shown as a verified identity", "Profile set by you (not confirmed)", c.modelOrigin.text.toString())
+        assertEquals("connected without a position is not 'streaming'", "Connected", c.stateChip.text.toString())
         assertEquals("No position yet", c.fixChip.text.toString())
         assertEquals(View.GONE, c.batteryChip.visibility)
 
@@ -174,7 +175,7 @@ class ReceiverSelectionUiTest {
         val sheet = showPicker()
         val shown = texts(sheet.requireView())
         listOf("Choose receiver", "Tablet GNSS", "On this network", "Previously connected", "Connect manually…", "Rover",
-            "Testing…", "Reach RS4 (reported by receiver)").forEach { want ->
+            "Testing…", "Reach RS4 (previously reported by the receiver)").forEach { want ->
             assertTrue("\"$want\" in $shown", shown.any { it == want || it.lines().contains(want) })
         }
         // The Emlid profile scans on open (no discovery in this test, so the scan reports "not available").
@@ -357,7 +358,7 @@ class ReceiverSelectionUiTest {
         c.bind(ReceiverCardPresenter.present(a, ReceiverUiFixtures.fix(), ReceiverUiFixtures.sky(18, 24), null, caps))
         c.bind(ReceiverCardPresenter.present(a.copy(attempt = ConnectionAttempt.Testing(2, b, null)),
             ReceiverUiFixtures.fix(), ReceiverUiFixtures.sky(18, 24), null, caps))
-        assertEquals("Connected", c.stateChip.text.toString())
+        assertEquals("Connected and streaming", c.stateChip.text.toString())
         assertEquals("RTK Fix", c.fixChip.text.toString())
         assertEquals("18/24 sats", c.satsChip.text.toString())
         assertEquals(View.VISIBLE, c.attempt.visibility)
@@ -365,7 +366,7 @@ class ReceiverSelectionUiTest {
 
         c.bind(ReceiverCardPresenter.present(a.copy(attempt = ConnectionAttempt.Failed(2, b, app.surrealar.receiver.selection.ConnectError.CaptureStarted)),
             ReceiverUiFixtures.fix(), ReceiverUiFixtures.sky(18, 24), null, caps))
-        assertEquals("Connected", c.stateChip.text.toString())
+        assertEquals("Connected and streaming", c.stateChip.text.toString())
         assertEquals(View.GONE, c.attempt.visibility)
         assertEquals("Couldn't switch to 192.168.42.7:9001: capture running. Still using Reach RS4 Pro base.", c.failure.text.toString())
         assertEquals("no announcement: the chip never left Connected", emptyList<String>(), spoken)

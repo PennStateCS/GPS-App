@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Settings → Receiver. Everyday items first: the receiver card, then receiver setup (RS4 compensated output, pole
+     height) or the tablet antenna height. Less-used settings are in the collapsible "Advanced" card (camera offset,
+     phase-centre override, mock location, troubleshooting); its state is remembered for the app session. -->
 <ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -19,6 +22,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:accessibilityHeading="true"
             android:text="Receiver"
             android:textAppearance="?attr/textAppearanceHeadlineSmall" />
 
@@ -29,7 +33,7 @@
             android:layout_marginTop="4dp"
             android:layout_marginBottom="20dp"
             android:alpha="0.7"
-            android:text="Choose your live position source and set up an external receiver."
+            android:text="@string/receiver_page_desc"
             android:textAppearance="?attr/textAppearanceBodyMedium" />
 
         <!-- ── Receiver card (Phase 5): source, receiver, connection state, Change receiver / details ── -->
@@ -37,8 +41,8 @@
             android:id="@+id/receiver_card"
             layout="@layout/view_receiver_card" />
 
-        <!-- ── External receiver: tilt and antenna setup (shown when an external receiver is the source).
-             Connection controls moved to the receiver card / picker sheet / manual dialog (Phase 5). ── -->
+        <!-- ── External receiver setup (shown when an external receiver is the source): RS4 / RS4 Pro compensated
+             NMEA output, pole height. Connection controls are in the card / picker sheet / manual dialog. ── -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/card_external_receiver_setup"
             android:layout_width="match_parent"
@@ -58,6 +62,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:accessibilityHeading="true"
                     android:paddingHorizontal="20dp"
                     android:paddingTop="16dp"
                     android:paddingBottom="2dp"
@@ -65,7 +70,8 @@
                     android:textAppearance="?attr/textAppearanceLabelLarge"
                     android:textColor="?attr/colorPrimary" />
 
-                <!-- Phase 4 WP C: RS4 / RS4 Pro tilt — Emlid Flow's compensated NMEA output and live tilt status -->
+                <!-- Phase 4 WP C: RS4 / RS4 Pro tilt — Emlid Flow's compensated NMEA output and live tilt status.
+                     Never moved into Advanced: it decides whether captures subtract the pole height. -->
                 <LinearLayout
                     android:id="@+id/group_receiver_tilt"
                     android:layout_width="match_parent"
@@ -98,7 +104,7 @@
                         android:layout_marginStart="20dp"
                         android:layout_marginEnd="20dp"
                         android:layout_marginTop="4dp"
-                        android:text="Set this to match Emlid Flow's position output. Enabled: the receiver sends the tilt-compensated pole tip with its own pole height, and captures do not subtract the pole height again. Unknown: positions that may be compensated are refused."
+                        android:text="Match Emlid Flow. Enabled: captures use Emlid Flow's pole height, not the one below. Unknown: positions that may be tilt-compensated are refused."
                         android:textAppearance="?attr/textAppearanceBodySmall"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
@@ -112,40 +118,6 @@
                         android:layout_marginBottom="4dp"
                         android:textAppearance="?attr/textAppearanceBodyMedium" />
                 </LinearLayout>
-
-                <!-- Antenna setup (external receiver). Both heights are measured to the bottom of the
-                     receiver (its antenna reference point), as with a tape; the app adds the receiver
-                     model's phase-centre offset. Pole height is used for captures, the camera distance
-                     for AR. See AntennaSetup. -->
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingHorizontal="20dp"
-                    android:paddingTop="16dp"
-                    android:paddingBottom="4dp"
-                    android:text="Antenna setup"
-                    android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingHorizontal="20dp"
-                    android:alpha="0.7"
-                    android:text="Measure both heights to the bottom of the receiver. The app adds the antenna's phase-centre offset."
-                    android:textAppearance="?attr/textAppearanceBodyMedium" />
-
-                <!-- Surveyor review: the app has no tilt model. Emlid can stream a tilt-compensated pole-tip position
-                     (antenna height set in Emlid Flow); this app then subtracting its own pole height would
-                     double-correct. Not yet verified on an RS4 Pro: see docs/geodesy/rs4-pro-tilt.md. -->
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingHorizontal="20dp"
-                    android:paddingTop="4dp"
-                    android:alpha="0.7"
-                    android:text="Level the pole: the app applies no tilt correction of its own. Reach RS4 / RS4 Pro: set &quot;Compensated NMEA output&quot; above to match Emlid Flow. When the receiver sends tilt-compensated pole-tip positions, captures do not subtract this pole height (Emlid Flow's is used); positions that may be compensated are refused. Not yet verified on an RS4 Pro: see the tablet checklist."
-                    android:textAppearance="?attr/textAppearanceBodyMedium" />
 
                 <!-- Shown once for installs that stored a pole height under the old meaning
                      (height to the antenna phase centre). -->
@@ -178,6 +150,8 @@
                         android:text="Looks right" />
                 </LinearLayout>
 
+                <!-- Pole height (antenna setup). Measured to the bottom of the receiver (its antenna reference point),
+                     as with a tape; the app adds the receiver model's phase-centre offset. See AntennaSetup. -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -205,7 +179,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:alpha="0.7"
-                            android:text="Ground mark to the bottom of the receiver. Used when capturing points."
+                            android:text="Ground mark to the bottom of the receiver. The antenna offset is added for you. Level the pole: the app applies no tilt correction."
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
                     </LinearLayout>
 
@@ -217,102 +191,6 @@
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/edit_antenna_height"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="numberDecimal"
-                            android:imeOptions="actionDone"
-                            android:singleLine="true" />
-                    </com.google.android.material.textfield.TextInputLayout>
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:minHeight="64dp"
-                    android:orientation="horizontal"
-                    android:paddingHorizontal="20dp"
-                    android:paddingVertical="@dimen/settings_content_row_padding_v">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:paddingEnd="16dp">
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="Tablet camera below receiver"
-                            android:textAppearance="?attr/textAppearanceBodyLarge" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:alpha="0.7"
-                            android:text="Vertical distance from the bottom of the receiver down to the tablet camera lens. Used by AR. Negative if the camera is higher."
-                            android:textAppearance="?attr/textAppearanceBodyMedium" />
-                    </LinearLayout>
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                        android:layout_width="140dp"
-                        android:layout_height="wrap_content"
-                        android:hint="−3 – 3"
-                        app:suffixText="m">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/edit_camera_below_receiver"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="numberDecimal|numberSigned"
-                            android:imeOptions="actionDone"
-                            android:singleLine="true" />
-                    </com.google.android.material.textfield.TextInputLayout>
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:minHeight="64dp"
-                    android:orientation="horizontal"
-                    android:paddingHorizontal="20dp"
-                    android:paddingVertical="@dimen/settings_content_row_padding_v">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:paddingEnd="16dp">
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="Antenna phase-centre offset"
-                            android:textAppearance="?attr/textAppearanceBodyLarge" />
-
-                        <TextView
-                            android:id="@+id/text_phase_center_offset_source"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:alpha="0.7"
-                            android:text="From the receiver model."
-                            android:textAppearance="?attr/textAppearanceBodyMedium" />
-                    </LinearLayout>
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                        android:layout_width="140dp"
-                        android:layout_height="wrap_content"
-                        app:suffixText="m">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/edit_phase_center_offset"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:inputType="numberDecimal"
@@ -333,7 +211,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- ── Section 2: Internal GPS (shown when internal source selected) ── -->
+        <!-- ── Internal GPS (shown when internal source selected) ── -->
         <LinearLayout
             android:id="@+id/group_internal_gps"
             android:layout_width="match_parent"
@@ -358,6 +236,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:accessibilityHeading="true"
                         android:paddingHorizontal="20dp"
                         android:paddingTop="16dp"
                         android:paddingBottom="8dp"
@@ -419,8 +298,9 @@
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
 
-        <!-- ── Section 3: Advanced ── -->
+        <!-- ── Advanced (collapsible; state remembered for the app session) ── -->
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_receiver_advanced"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
@@ -434,112 +314,303 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingHorizontal="20dp"
-                    android:paddingTop="16dp"
-                    android:paddingBottom="8dp"
-                    android:text="Advanced"
-                    android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
-
-                <!-- Publish Mock Location row -->
+                <!-- Header: one 56 dp touch target that expands / collapses the section. -->
                 <LinearLayout
+                    android:id="@+id/btn_receiver_advanced_toggle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
                     android:gravity="center_vertical"
-                    android:minHeight="64dp"
+                    android:minHeight="56dp"
+                    android:orientation="horizontal"
                     android:paddingHorizontal="20dp"
-                    android:paddingVertical="@dimen/settings_content_row_padding_v">
+                    android:paddingVertical="12dp">
 
                     <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:paddingEnd="16dp">
+                        android:orientation="vertical">
 
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Share external GNSS as Android mock location"
-                            android:textAppearance="?attr/textAppearanceBodyLarge" />
+                            android:accessibilityHeading="true"
+                            android:text="@string/receiver_advanced_title"
+                            android:textAppearance="?attr/textAppearanceLabelLarge"
+                            android:textColor="?attr/colorPrimary" />
 
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
-                            android:alpha="0.7"
-                            android:text="Allows other Android apps to use the connected external receiver position. Requires enabling this app as the mock location app in Developer Options."
-                            android:textAppearance="?attr/textAppearanceBodyMedium" />
+                            android:text="@string/receiver_advanced_summary"
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/switch_publish_mock_location"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" />
+                    <ImageView
+                        android:id="@+id/image_receiver_advanced_chevron"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:layout_marginStart="12dp"
+                        android:contentDescription="@null"
+                        android:rotation="90"
+                        android:src="@drawable/ic_chevron_right"
+                        app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
 
-                <!-- Error banner — shown when mock location permission is denied -->
                 <LinearLayout
-                    android:id="@+id/layout_mock_location_error"
+                    android:id="@+id/group_receiver_advanced"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:visibility="gone"
-                    android:paddingHorizontal="16dp"
-                    android:paddingBottom="16dp">
+                    android:visibility="gone">
 
-                    <com.google.android.material.card.MaterialCardView
+                    <!-- External receiver only: AR camera offset and the manual phase-centre override. -->
+                    <LinearLayout
+                        android:id="@+id/group_advanced_external"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        app:cardCornerRadius="12dp"
-                        app:cardElevation="0dp"
-                        app:strokeColor="?attr/colorError"
-                        app:strokeWidth="1dp">
+                        android:orientation="vertical"
+                        android:visibility="gone">
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:minHeight="64dp"
                             android:orientation="horizontal"
-                            android:padding="16dp"
-                            android:gravity="start">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginEnd="12dp"
-                                android:layout_marginTop="2dp"
-                                android:text="⚠"
-                                android:textAppearance="@style/TextAppearance.App.SectionTitle"
-                                android:textColor="?attr/colorError" />
+                            android:paddingHorizontal="20dp"
+                            android:paddingVertical="@dimen/settings_content_row_padding_v">
 
                             <LinearLayout
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:orientation="vertical">
+                                android:orientation="vertical"
+                                android:paddingEnd="16dp">
 
                                 <TextView
-                                    android:id="@+id/text_mock_location_error"
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
-                                    android:layout_marginBottom="8dp"
-                                    android:text="Mock location is not enabled for this app. Open Developer Options and select this app as the mock location app."
-                                    android:textAppearance="?attr/textAppearanceBodyMedium" />
+                                    android:text="Tablet camera below receiver"
+                                    android:textAppearance="?attr/textAppearanceBodyLarge" />
 
-                                <com.google.android.material.button.MaterialButton
-                                    android:id="@+id/btn_open_developer_options"
-                                    style="@style/Widget.Material3.Button.OutlinedButton"
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:alpha="0.7"
+                                    android:text="Bottom of the receiver down to the camera lens. Used by AR. Negative if the camera is higher."
+                                    android:textAppearance="?attr/textAppearanceBodyMedium" />
+                            </LinearLayout>
+
+                            <com.google.android.material.textfield.TextInputLayout
+                                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                                android:layout_width="140dp"
+                                android:layout_height="wrap_content"
+                                android:hint="−3 – 3"
+                                app:suffixText="m">
+
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/edit_camera_below_receiver"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="numberDecimal|numberSigned"
+                                    android:imeOptions="actionDone"
+                                    android:singleLine="true" />
+                            </com.google.android.material.textfield.TextInputLayout>
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:minHeight="64dp"
+                            android:orientation="horizontal"
+                            android:paddingHorizontal="20dp"
+                            android:paddingVertical="@dimen/settings_content_row_padding_v">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical"
+                                android:paddingEnd="16dp">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="Antenna phase-centre offset"
+                                    android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                                <TextView
+                                    android:id="@+id/text_phase_center_offset_source"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:alpha="0.7"
+                                    android:text="From the receiver model."
+                                    android:textAppearance="?attr/textAppearanceBodyMedium" />
+                            </LinearLayout>
+
+                            <com.google.android.material.textfield.TextInputLayout
+                                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                                android:layout_width="140dp"
+                                android:layout_height="wrap_content"
+                                app:suffixText="m">
+
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/edit_phase_center_offset"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="numberDecimal"
+                                    android:imeOptions="actionDone"
+                                    android:singleLine="true" />
+                            </com.google.android.material.textfield.TextInputLayout>
+                        </LinearLayout>
+
+                        <!-- Surveyor review: the app has no tilt model; a compensated pole-tip position must not get
+                             the pole height subtracted again. Not yet verified on an RS4 Pro: see
+                             docs/geodesy/rs4-pro-tilt.md. -->
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:paddingHorizontal="20dp"
+                            android:paddingBottom="8dp"
+                            android:alpha="0.7"
+                            android:text="Reach RS4 / RS4 Pro: when the receiver sends tilt-compensated pole-tip positions, captures do not subtract the pole height (Emlid Flow's is used); positions that may be compensated are refused. Not yet verified on an RS4 Pro."
+                            android:textAppearance="?attr/textAppearanceBodySmall" />
+                    </LinearLayout>
+
+                    <!-- Publish Mock Location row -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:minHeight="64dp"
+                        android:paddingHorizontal="20dp"
+                        android:paddingVertical="@dimen/settings_content_row_padding_v">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:paddingEnd="16dp">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="Share external GNSS as Android mock location"
+                                android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:alpha="0.7"
+                                android:text="Lets other apps use the receiver position. Select this app as the mock location app in Developer Options."
+                                android:textAppearance="?attr/textAppearanceBodyMedium" />
+                        </LinearLayout>
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/switch_publish_mock_location"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+                    </LinearLayout>
+
+                    <!-- Error banner — shown when mock location permission is denied (expands Advanced). -->
+                    <LinearLayout
+                        android:id="@+id/layout_mock_location_error"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone"
+                        android:paddingHorizontal="16dp"
+                        android:paddingBottom="16dp">
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:cardCornerRadius="12dp"
+                            app:cardElevation="0dp"
+                            app:strokeColor="?attr/colorError"
+                            app:strokeWidth="1dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:padding="16dp"
+                                android:gravity="start">
+
+                                <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="Open Developer Options" />
+                                    android:layout_marginEnd="12dp"
+                                    android:layout_marginTop="2dp"
+                                    android:text="⚠"
+                                    android:textAppearance="@style/TextAppearance.App.SectionTitle"
+                                    android:textColor="?attr/colorError" />
 
+                                <LinearLayout
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:orientation="vertical">
+
+                                    <TextView
+                                        android:id="@+id/text_mock_location_error"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginBottom="8dp"
+                                        android:text="Mock location is not enabled for this app. Open Developer Options and select this app as the mock location app."
+                                        android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+                                    <com.google.android.material.button.MaterialButton
+                                        android:id="@+id/btn_open_developer_options"
+                                        style="@style/Widget.Material3.Button.OutlinedButton"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:text="Open Developer Options" />
+
+                                </LinearLayout>
                             </LinearLayout>
-                        </LinearLayout>
-                    </com.google.android.material.card.MaterialCardView>
+                        </com.google.android.material.card.MaterialCardView>
+                    </LinearLayout>
+
+                    <!-- Troubleshooting: where to look; the details live in Receiver details and Developer tools. -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="20dp"
+                        android:paddingTop="8dp"
+                        android:text="@string/receiver_troubleshooting_title"
+                        android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:paddingHorizontal="20dp"
+                        android:alpha="0.7"
+                        android:text="@string/receiver_troubleshooting_text"
+                        android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_receiver_open_diagnostics"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginBottom="8dp"
+                        android:minHeight="48dp"
+                        android:text="@string/receiver_open_diagnostics" />
                 </LinearLayout>
 
             </LinearLayout>

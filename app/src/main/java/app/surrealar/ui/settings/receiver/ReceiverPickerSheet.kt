@@ -209,7 +209,12 @@ class ReceiverPickerSheet : BottomSheetDialogFragment() {
     }
 
     private fun statusText(s: PickerRowStatus): String = when (s) {
-        PickerRowStatus.Active -> getString(R.string.picker_status_active)
+        PickerRowStatus.InUse -> getString(R.string.picker_status_in_use)
+        PickerRowStatus.Connected -> getString(R.string.picker_status_connected)
+        PickerRowStatus.Connecting -> getString(R.string.picker_status_connecting)
+        PickerRowStatus.Reconnecting -> getString(R.string.picker_status_reconnecting)
+        PickerRowStatus.Unavailable -> getString(R.string.picker_status_unavailable)
+        PickerRowStatus.Selected -> getString(R.string.picker_status_selected)
         PickerRowStatus.Testing -> getString(R.string.picker_status_testing)
         PickerRowStatus.NotFoundInScan -> getString(R.string.picker_status_not_found)
         is PickerRowStatus.Failed -> getString(R.string.picker_status_failed, ReceiverUi.shortReason(requireContext(), s.error))

@@ -21,10 +21,10 @@ class ReceiverPickerRowsTest {
     private val saved = RecentReceiver(TARGET.host, TARGET.port, "reach_rs4", "Base", "Reach RS4", "SN1", "34.7", 5_000L)
     private val other = RecentReceiver("192.168.42.9", 9001, "generic_nmea_tcp", null, lastConnectedMs = 1_000L)
 
-    @Test fun `sections in order with tablet active for device GNSS`() {
+    @Test fun `sections in order with tablet in use for device GNSS`() {
         val items = ReceiverPickerRows.build(ReceiverUiFixtures.internal)
         assertEquals(PickerItem.Header(PickerItem.Section.TABLET), items[0])
-        assertEquals(PickerItem.Tablet(PickerRowStatus.Active), items[1])
+        assertEquals(PickerItem.Tablet(PickerRowStatus.InUse), items[1])
         assertEquals(PickerItem.Header(PickerItem.Section.NETWORK), items[2])
         assertTrue(items[3] is PickerItem.Scan)
         assertEquals(PickerItem.Header(PickerItem.Section.RECENT), items[4])
@@ -32,11 +32,11 @@ class ReceiverPickerRowsTest {
         assertEquals(PickerItem.Manual, items.last())
     }
 
-    @Test fun `recent rows show active, testing, failed and not found in the last scan`() {
+    @Test fun `recent rows show connected, testing, failed and not found in the last scan`() {
         val scan = NetworkScanState.Done(listOf(ScannedReceiver(TARGET.host, 9001, "Reach", EmlidDiscovery.UNCONFIRMED_MODEL_LABEL)), 9_000L)
         val s = connected().copy(recent = listOf(saved, other), scan = scan)
         val recent = ReceiverPickerRows.build(s).filterIsInstance<PickerItem.Recent>()
-        assertEquals(PickerRowStatus.Active, recent[0].status)
+        assertEquals(PickerRowStatus.Connected, recent[0].status)
         assertEquals(ExternalReceiverProfile.REACH_RS4, recent[0].profile)
         assertEquals(PickerRowStatus.NotFoundInScan, recent[1].status)
         assertNull("tablet not active while external", ReceiverPickerRows.build(s).filterIsInstance<PickerItem.Tablet>().single().status)
@@ -46,6 +46,23 @@ class ReceiverPickerRowsTest {
         val failed = s.copy(attempt = ConnectionAttempt.Failed(2, ReceiverTarget("192.168.42.9", 9001), ConnectError.Unreachable(9001)))
         assertEquals(PickerRowStatus.Failed(ConnectError.Unreachable(9001)),
             ReceiverPickerRows.build(failed).filterIsInstance<PickerItem.Recent>()[1].status)
+    }
+
+    @Test fun `the saved receiver is never Connected just because it is the saved target`() {
+        fun savedStatus(s: app.surrealar.receiver.selection.ReceiverSelectionState) =
+            ReceiverPickerRows.build(s.copy(recent = listOf(saved))).filterIsInstance<PickerItem.Recent>().single().status
+        val c = connected()
+        assertEquals(PickerRowStatus.Connected, savedStatus(c))
+        assertEquals(PickerRowStatus.Connecting,
+            savedStatus(c.copy(link = io.github.pennstatecs.geokit.gnss.link.ReconnectingNmeaAdapter.ConnectionState.CONNECTING)))
+        assertEquals(PickerRowStatus.Reconnecting,
+            savedStatus(c.copy(link = io.github.pennstatecs.geokit.gnss.link.ReconnectingNmeaAdapter.ConnectionState.RECONNECTING)))
+        assertEquals("link down", PickerRowStatus.Unavailable,
+            savedStatus(c.copy(link = io.github.pennstatecs.geokit.gnss.link.ReconnectingNmeaAdapter.ConnectionState.ERROR)))
+        assertEquals("disconnected", PickerRowStatus.Unavailable,
+            savedStatus(c.copy(link = io.github.pennstatecs.geokit.gnss.link.ReconnectingNmeaAdapter.ConnectionState.DISCONNECTED)))
+        assertEquals("adapter not running (startup)", PickerRowStatus.Selected,
+            savedStatus(c.copy(activeProvider = app.surrealar.gnss.source.SourceSettings.ProviderChoice.INTERNAL, link = null)))
     }
 
     @Test fun `scan results are listed with the unconfirmed-model label`() {
