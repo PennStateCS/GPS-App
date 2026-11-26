@@ -301,7 +301,7 @@ Recordings contain precise coordinates: delete test recordings afterwards, share
 
 | # | Check | Expected | Needs |
 |---|---|---|---|
-| 14.1 | Settings → Developer Tools | Card "GNSS Diagnostics" → "Raw NMEA Recording" with duration 10 s / 30 s (selected) / 60 s / Manual, Start, Stop; nothing new on the Receiver page or in the capture screens | — |
+| 14.1 | Developer Tools (side menu) → "Raw NMEA Recording" page (next to GNSS, AR Debug, …); Settings → Developer Tools no longer shows it | Page with duration 10 s / 30 s (selected) / 60 s / Manual, Start, Stop; nothing new on the Receiver page or in the capture screens | — |
 | 14.2 | Tablet GNSS active, Start for the first time | One-time privacy notice (coordinates, receiver identifiers, stays on the device until shared); Cancel starts nothing; "I understand" starts; the notice does not come back on the next Start (also after an app restart) | — |
 | 14.3 | Tablet GNSS, 10 s | "Recording… 00:0x / 00:10", sentence/byte counters rise; stops by itself at 00:10 with "Finished — duration reached"; row in "Recordings on this device" shows "tablet GNSS · complete" | — |
 | 14.4 | RS4 Pro over TCP, connected, 30 s | Availability says "external receiver over TCP"; GGA, RMC, GST, ETC counters rise, EBP when a base is configured; Bad checksum 0, Dropped 0; file name `GNSS_<date>_<time>_RS4Pro.nmea` | H |

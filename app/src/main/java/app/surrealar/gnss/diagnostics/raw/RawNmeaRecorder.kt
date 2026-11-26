@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Settings → Developer Tools → GNSS Diagnostics → Raw NMEA Recording: writes the NMEA lines a live source
+ * Developer Tools → Raw NMEA Recording: writes the NMEA lines a live source
  * delivers, verbatim and in order, to an app-private `.nmea` file with a companion `.json`
  * ([RawNmeaMetadataJson]). A developer diagnostic only — independent of point capture, never changes GNSS
  * processing, and never opens its own receiver connection.

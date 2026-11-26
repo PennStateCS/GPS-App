@@ -22,6 +22,8 @@
     <string name="dev_page_title_coordinates">Coordinates</string>
     <string name="dev_page_subtitle_coordinates">Stored coordinate and model-link debugging tools.</string>
     <string name="dev_page_title_gnss">GNSS</string>
+    <string name="dev_page_title_raw_nmea">Raw NMEA Recording</string>
+    <string name="dev_page_subtitle_raw_nmea">Saves the NMEA sentences the active live GNSS source sends, in order and as received, to a file on this device for troubleshooting. Recording never changes positions or point capture. It stops when you leave this page.</string>
     <string name="dev_page_subtitle_gnss">Receiver state, NMEA flow, fix quality, and satellite diagnostics.</string>
     <string name="dev_section_actions">Actions</string>
     <string name="dev_section_ar_diagnostics">AR Diagnostics</string>

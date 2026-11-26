@@ -37,9 +37,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Settings → Developer Tools → GNSS Diagnostics → Raw NMEA Recording. UI only: the app-scoped
+ * Developer Tools → Raw NMEA Recording (its own page in the Developer Tools screen). UI only: the app-scoped
  * [RawNmeaRecorder] does the recording. A recording does not outlive the diagnostic workflow: it is stopped
- * ([RawNmeaTermination.LIFECYCLE]) when the user leaves this category or Settings, or the screen stops
+ * ([RawNmeaTermination.LIFECYCLE]) when the user leaves this page or Developer Tools, or the screen stops
  * (app in background, screen off) — but not on a configuration change (rotation), where the page is rebuilt.
  */
 internal class RawNmeaRecordingSection(

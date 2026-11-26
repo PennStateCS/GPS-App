@@ -7,7 +7,7 @@ status, tilt status, capture, coordinates or AR, and it never opens its own rece
 
 ## Where
 
-Settings → **Developer Tools** → card **GNSS Diagnostics** → **Raw NMEA Recording**
+**Developer Tools** (side menu; the screen with GNSS, AR Debug, Maps Debug, …) → **Raw NMEA Recording** page
 (`ui/settings/categories/RawNmeaRecordingSection.kt`, layout `content_settings_developer.xml`). Not on the Receiver
 page and not in the capture UI.
 
@@ -154,7 +154,7 @@ when it ends. A recording interrupted by process death therefore keeps `complete
 | Stop pressed | `USER_STOP` | true |
 | Active provider changes, or the external receiver profile changes | `SOURCE_CHANGED` | false |
 | External link leaves CONNECTED (disconnect, reconnect, host change) | `DISCONNECTED` | false |
-| Leaving the Developer category, leaving Settings, app in background, screen off; app scope cancelled | `LIFECYCLE` | false |
+| Switching to another Developer Tools page, leaving Developer Tools, app in background, screen off; app scope cancelled | `LIFECYCLE` | false |
 | File cannot be opened / written / flushed (overrides any earlier reason) | `WRITER_ERROR` | false |
 | Queue (4096 lines) full — writer fell behind | `BUFFER_OVERFLOW` | false |
 
@@ -172,7 +172,7 @@ coordinates) go to the diagnostic log under tag `GNSS`.
    `confirmed: true`.
 3. In the app: Settings → Receiver → connect the RS4 Pro (profile "Emlid Reach RS4 Pro"); wait for **Connected**.
    Open Receiver details once so the model/firmware/serial are reported (optional).
-4. Settings → Developer Tools → Raw NMEA Recording → choose 60 s or Manual → **Start**. Stay on the page
+4. Developer Tools (side menu) → Raw NMEA Recording → choose 60 s or Manual → **Start**. Stay on the page
    (leaving it stops the recording); keep the screen on.
 5. Do what needs to be recorded (e.g. tilt the pole, lose/regain fix). **Stop** (or let it time out).
 6. Check: status "Finished — …", Dropped 0, Bad checksum as expected. **Share** → both files.

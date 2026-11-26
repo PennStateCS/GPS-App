@@ -2,6 +2,7 @@ package app.surrealar.ui.settings.categories
 
 import android.app.Application
 import android.content.DialogInterface
+import android.view.View
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import app.surrealar.R
@@ -76,7 +77,7 @@ class DeveloperSettingsControllerTest {
     @Test fun `binds and persists the developer tools switch`() {
         val repo = FakeRepo(DeveloperSettings(developerToolsEnabled = true))
         val host = ControllerHost()
-        val view = host.show(DeveloperSettingsController(host.fragment, repo, mainScope(), recorder(), Dispatchers.Main), mainScope())
+        val view = host.show(DeveloperSettingsController(host.fragment, repo, mainScope()), mainScope())
         val switch = view.findViewById<MaterialSwitch>(R.id.switch_dev_tools)
 
         assertTrue(switch.isChecked)
@@ -85,13 +86,25 @@ class DeveloperSettingsControllerTest {
         assertEquals(listOf(DeveloperSettings(developerToolsEnabled = false)), repo.saved)
     }
 
-    @Test fun `raw NMEA - replay is unavailable, privacy notice before the first start, leaving the page stops`() {
+    @Test fun `Settings Developer Tools no longer hosts the raw NMEA controls`() {
+        val host = ControllerHost()
+        val view = host.show(DeveloperSettingsController(host.fragment, FakeRepo(DeveloperSettings()), mainScope()), mainScope())
+        assertEquals(null, view.findViewById<View?>(R.id.button_raw_nmea_start))
+    }
+
+    @Test fun `raw NMEA page - replay is unavailable, privacy notice before the first start, leaving the page stops`() {
         val repo = FakeRepo(DeveloperSettings(developerToolsEnabled = true), ack = false)
         val rec = recorder()
         val host = ControllerHost()
         val categoryJob = Job()
-        val controller = DeveloperSettingsController(host.fragment, repo, mainScope(), rec, Dispatchers.Main)
-        val view = host.show(controller, CoroutineScope(Dispatchers.Main + categoryJob))
+        // The section on its own Developer Tools page (dev_page_raw_nmea), hosted by an attached fragment.
+        host.show(DeveloperSettingsController(host.fragment, repo, mainScope()), mainScope())
+        val section = RawNmeaRecordingSection(host.fragment, rec, repo, mainScope(), Dispatchers.Main)
+        val view = host.inflater.inflate(R.layout.dev_page_raw_nmea, host.fragment.container, false)
+        host.fragment.container.addView(view)
+        section.bind(view, CoroutineScope(Dispatchers.Main + categoryJob))
+        ShadowLooper.idleMainLooper()
+        val controller = object { fun onDestroyView() = section.onDestroyView() }
         val availability = view.findViewById<TextView>(R.id.text_raw_nmea_availability)
         val start = view.findViewById<MaterialButton>(R.id.button_raw_nmea_start)
 

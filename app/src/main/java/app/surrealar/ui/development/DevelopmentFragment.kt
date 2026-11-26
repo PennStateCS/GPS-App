@@ -65,6 +65,20 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
     @Inject
     lateinit var dataHealthChecker: app.surrealar.data.health.DataHealthChecker
 
+    @Inject
+    lateinit var rawNmeaRecorder: app.surrealar.gnss.diagnostics.raw.RawNmeaRecorder
+
+    @Inject
+    lateinit var developerSettingsRepo: app.surrealar.domain.repository.SettingsRepository
+
+    /** Raw NMEA Recording page controls; kept for the fragment's lifetime so the duration choice survives. */
+    private val rawNmeaSection by lazy {
+        app.surrealar.ui.settings.categories.RawNmeaRecordingSection(
+            this, rawNmeaRecorder, developerSettingsRepo,
+            saveScope = kotlinx.coroutines.MainScope(),   // outlives the page: finishing a share/delete or a save
+        )
+    }
+
     private val viewModel: DevelopmentViewModel by viewModels()
 
     // Developer categories: lightweight side list for specialized debug panes.
@@ -72,6 +86,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
     private val devCategories = listOf(
         SettingsCategory(3, "AR Debug",     R.drawable.ic_dev_tools),
         SettingsCategory(7, "GNSS",         R.drawable.ic_satellite_24),
+        SettingsCategory(8, "Raw NMEA Recording", R.drawable.ic_file),
         SettingsCategory(4, "Maps Debug",   R.drawable.ic_map),
         SettingsCategory(2, "Permissions",  R.drawable.ic_lock_24),
         SettingsCategory(1, "System Info",  R.drawable.ic_section_info)
@@ -105,12 +120,33 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                 3 -> setupArDebugContent(inflater)        // ARCore capability probe (no camera start)
                 4 -> setupMapsDebugContent(inflater)      // Google Maps / Play Services debug
                 7 -> setupGnssLiveContent()               // Live GNSS fix + NMEA sentence history
+                8 -> setupRawNmeaContent(inflater)        // Raw NMEA recording (developer diagnostic)
                 else -> null
             }
         } catch (e: Exception) {
             app.surrealar.util.DiagnosticsLogger.e(app.surrealar.util.diagnostics.DiagTags.APP, "Developer page category build failed categoryId=${category.id}", e)
             null
         }
+
+    /**
+     * Raw NMEA Recording page. The controls are bound for as long as the page is shown: switching to another
+     * Developer page (the view is detached) or leaving Developer Tools ends a running recording (LIFECYCLE), but a
+     * rotation does not (the section checks isChangingConfigurations).
+     */
+    private fun setupRawNmeaContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.dev_page_raw_nmea, null)
+        val pageScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
+        rawNmeaSection.bind(view, pageScope)
+        view.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {}
+            override fun onViewDetachedFromWindow(v: View) {
+                v.removeOnAttachStateChangeListener(this)
+                rawNmeaSection.onDestroyView()
+                pageScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+            }
+        })
+        return view
+    }
 
     // Helper to create a right‑aligned refresh icon bar reused across dev panes.
     private fun createRefreshBar(onClick: () -> Unit): View {

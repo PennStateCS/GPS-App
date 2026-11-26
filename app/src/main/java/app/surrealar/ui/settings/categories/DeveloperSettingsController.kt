@@ -19,12 +19,7 @@ internal class DeveloperSettingsController(
     private val settingsRepo: DeveloperSettingsRepository,
     /** Outlives the screen so a change made as the user leaves still saves. */
     private val saveScope: CoroutineScope,
-    /** GNSS Diagnostics → Raw NMEA Recording (app-scoped recorder). */
-    rawNmeaRecorder: app.surrealar.gnss.diagnostics.raw.RawNmeaRecorder,
-    rawNmeaIo: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
 ) : SettingsCategoryController {
-
-    private val rawNmea = RawNmeaRecordingSection(fragment, rawNmeaRecorder, settingsRepo, saveScope, rawNmeaIo)
 
     override fun createView(inflater: LayoutInflater, container: ViewGroup, categoryScope: CoroutineScope): View {
         val view = inflater.inflate(R.layout.content_settings_developer, container, false)
@@ -57,16 +52,6 @@ internal class DeveloperSettingsController(
         } catch (e: Exception) {
             settingsError("Settings section setup failed section=developer", e)
         }
-        try {
-            rawNmea.bind(view, categoryScope)
-        } catch (e: Exception) {
-            settingsError("Settings section setup failed section=rawNmeaRecording", e)
-        }
         return view
-    }
-
-    /** Leaving the Developer page ends a running raw NMEA recording (not on rotation). */
-    override fun onDestroyView() {
-        rawNmea.onDestroyView()
     }
 }
