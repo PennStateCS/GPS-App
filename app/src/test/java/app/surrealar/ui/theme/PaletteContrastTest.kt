@@ -159,6 +159,71 @@ abstract class PaletteContrastChecks {
             R.color.ar_overlay_info, R.color.ar_overlay_text)) check(name(id) + " on 73 pct black scrim over white", color(id), scrim, Wcag.TEXT)
     }
 
+    @Test fun `StatusTone resolves to the status roles`() {
+        val expected = mapOf(
+            StatusTone.SUCCESS to roles[0], StatusTone.WARNING to roles[1], StatusTone.ERROR to roles[2],
+            StatusTone.INFO to roles[3], StatusTone.NEUTRAL to roles[4],
+        )
+        for ((tone, r) in expected) {
+            assertEquals("$themeName $tone fg", color(r.fg), tone.foreground(ctx))
+            assertEquals("$themeName $tone container", color(r.container), tone.container(ctx))
+            assertEquals("$themeName $tone onContainer", color(r.onContainer), tone.onContainer(ctx))
+            // Filled badges (coordinate detail, model readiness) are drawn on surface and surfaceContainer cards:
+            // the badge text always uses on-container, never white or the plain foreground.
+            check("badge $tone text on its container", tone.onContainer(ctx), tone.container(ctx), Wcag.TEXT)
+        }
+    }
+
+    @Test fun `chart axes labels and series pass on the card surfaces`() {
+        for (s in listOf("surface", "surfaceContainer")) {
+            val bg = surfaces.getValue(s)
+            check("chart_text on $s", color(R.color.chart_text), bg, Wcag.TEXT)
+            check("chart_title on $s", color(R.color.chart_title), bg, Wcag.TEXT)
+            check("chart_axis on $s", color(R.color.chart_axis), bg, Wcag.NON_TEXT)
+            check("chart_used_halo on $s", color(R.color.chart_used_halo), bg, Wcag.NON_TEXT)
+            for (id in listOf(R.color.chart_bar_strong, R.color.chart_bar_medium, R.color.chart_bar_weak, R.color.chart_bar_unused,
+                R.color.chart_constellation_gps, R.color.chart_constellation_glonass, R.color.chart_constellation_galileo,
+                R.color.chart_constellation_beidou, R.color.chart_constellation_qzss, R.color.chart_constellation_sbas,
+                R.color.chart_constellation_irnss, R.color.chart_constellation_other))
+                check(name(id) + " (series) on $s", color(id), bg, Wcag.NON_TEXT)
+        }
+        // Series stay distinguishable from each other (not only by hue: the legend names them too).
+        val series = listOf(R.color.chart_bar_strong, R.color.chart_bar_medium, R.color.chart_bar_weak, R.color.chart_bar_unused).map(::color)
+        assertEquals("$themeName SNR series are distinct", series.size, series.toSet().size)
+    }
+
+    @Test fun `AR label overlays and chips pass on their scrims over a white camera frame`() {
+        val white = 0xFFFFFFFF.toInt()
+        val pill = Wcag.composite(color(R.color.ar_overlay_label_bg), white)
+        for (id in listOf(R.color.ar_overlay_text, R.color.ar_overlay_text_secondary, R.color.ar_overlay_model_accent))
+            check(name(id) + " on AR label pill over white", color(id), pill, Wcag.TEXT)
+        val chip = Wcag.composite(color(R.color.ar_overlay_bg_dark), white)
+        for (id in listOf(R.color.ar_overlay_text, R.color.ar_overlay_success, R.color.ar_overlay_warning,
+            R.color.ar_overlay_error, R.color.ar_overlay_info)) check(name(id) + " on AR chip (80 pct black) over white", color(id), chip, Wcag.TEXT)
+        // Model-linked pin border / arrow against the camera frame itself is not guaranteed (any colour can be behind
+        // it); it always sits on or next to the dark pill, where it passes:
+        check("ar_overlay_model_accent border on pill", color(R.color.ar_overlay_model_accent), pill, Wcag.NON_TEXT)
+    }
+
+    @Test fun `map point labels pass on their halo over a white tile`() {
+        val halo = Wcag.composite(color(R.color.map_label_bg), 0xFFFFFFFF.toInt())
+        check("map_label_text on 70 pct black halo over white tile", color(R.color.map_label_text), halo, Wcag.TEXT)
+    }
+
+    @Test fun `list selection and disabled text`() {
+        val pc = attr(M.attr.colorPrimaryContainer)
+        val onPc = attr(M.attr.colorOnPrimaryContainer)
+        // Coordinate list selected row: name onPrimaryContainer, coordinates onPrimaryContainer at 0xB2 alpha,
+        // lat/lon line onSurfaceVariant (unchanged by selection).
+        check("selected row name on primaryContainer", onPc, pc, Wcag.TEXT)
+        check("selected row coordinates (70 pct) on primaryContainer", Wcag.withAlpha(onPc, 0xB2 / 255f), pc, Wcag.TEXT)
+        check("selected row lat/lon onSurfaceVariant on primaryContainer", attr(M.attr.colorOnSurfaceVariant), pc, Wcag.TEXT)
+        check("selection accent colorPrimary on surface", attr(A.attr.colorPrimary), surfaces.getValue("surface"), Wcag.NON_TEXT)
+        // Disabled text (M3: onSurface at 38 %) is exempt from WCAG 1.4.3; keep it discernible, not a pass/fail target.
+        for (s in listOf("surface", "surfaceContainerHigh"))
+            check("disabled text (onSurface 38 pct) on $s - WCAG-exempt floor", Wcag.withAlpha(attr(M.attr.colorOnSurface), 0.38f), surfaces.getValue(s), 2.0)
+    }
+
     @Test fun `model viewer canvas text passes`() {
         val canvas = color(R.color.model_viewer_canvas)
         check("model_viewer_on_canvas", color(R.color.model_viewer_on_canvas), canvas, Wcag.TEXT)
