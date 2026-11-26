@@ -13,6 +13,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -276,6 +277,81 @@ class FixSwitchboardTest {
             assertTrue(sb.fixStale.value)
             assertTrue("late subscribers get no frozen replay", sb.fixes.replayCache.isEmpty())
 
+            val f = fix(Provider.INTERNAL)
+            internal.emit(f); advanceUntilIdle()
+            assertEquals(f, sb.currentFix.value)
+            assertEquals(false, sb.fixStale.value)
+        }
+
+    // ── Fail-closed fix transform (stabilization item 2) ───────────────────────────────────────
+
+    /** Behaves like ReceiverFeedDatum.normalise: internal fixes untouched, external fixes transformed or throwing. */
+    private class FlakyTransform {
+        var failing = false
+        val transformed = mutableListOf<Fix>()
+        fun apply(f: Fix): Fix {
+            if (f.provider == Provider.INTERNAL) return f
+            if (failing) throw IllegalStateException("datum normalisation failed")
+            return f.copy(latDeg = f.latDeg + 1e-5).also { transformed += it }
+        }
+    }
+
+    @Test fun `a fix whose transform throws is never published and withdraws the live position`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val (_, src) = settings(ProviderChoice.EXTERNAL_TCP)
+            val external = FakeSourceAdapter()
+            val t = FlakyTransform()
+            val sb = FixSwitchboard(backgroundScope, src, mapOf(ProviderChoice.EXTERNAL_TCP to external),
+                fixTransform = t::apply)
+            val seen = mutableListOf<Fix>()
+            backgroundScope.launch { sb.fixes.collect { seen += it } }
+            sb.start(); advanceUntilIdle()
+
+            external.emit(fix(Provider.EXTERNAL_TCP)); advanceUntilIdle()
+            val good = t.transformed.single()
+            assertEquals(good, sb.currentFix.value)
+
+            t.failing = true
+            val raw = fix(Provider.EXTERNAL_TCP)
+            external.emit(raw); advanceUntilIdle()
+            assertNull("no stale position stays live after a failed transform", sb.currentFix.value)
+            assertTrue("pages see 'no live position'", sb.fixStale.value)
+            assertTrue("late subscribers get nothing replayed", sb.fixes.replayCache.isEmpty())
+            assertEquals("the raw fix never reached a consumer", listOf(good), seen)
+            assertTrue(seen.none { it === raw || it == raw })
+
+            repeat(3) { external.emit(fix(Provider.EXTERNAL_TCP)); advanceUntilIdle() }
+            assertNull(sb.currentFix.value)
+            assertEquals(listOf(good), seen)
+        }
+
+    @Test fun `publishing resumes when transforms succeed again`() = runTest(UnconfinedTestDispatcher()) {
+        val (_, src) = settings(ProviderChoice.EXTERNAL_TCP)
+        val external = FakeSourceAdapter()
+        val t = FlakyTransform().apply { failing = true }
+        val sb = FixSwitchboard(backgroundScope, src, mapOf(ProviderChoice.EXTERNAL_TCP to external),
+            fixTransform = t::apply)
+        sb.start(); advanceUntilIdle()
+        external.emit(fix(Provider.EXTERNAL_TCP)); advanceUntilIdle()
+        assertNull(sb.currentFix.value)
+        assertTrue(sb.fixStale.value)
+
+        t.failing = false
+        external.emit(fix(Provider.EXTERNAL_TCP)); advanceUntilIdle()
+        val recovered = t.transformed.single()
+        assertEquals(recovered, sb.currentFix.value)
+        assertEquals(false, sb.fixStale.value)
+        assertEquals(listOf(recovered), sb.fixes.replayCache)
+    }
+
+    @Test fun `internal fixes are unaffected by a transform that fails for external fixes`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val (_, src) = settings(ProviderChoice.INTERNAL)
+            val internal = FakeSourceAdapter()
+            val t = FlakyTransform().apply { failing = true }
+            val sb = FixSwitchboard(backgroundScope, src, mapOf(ProviderChoice.INTERNAL to internal),
+                fixTransform = t::apply)
+            sb.start(); advanceUntilIdle()
             val f = fix(Provider.INTERNAL)
             internal.emit(f); advanceUntilIdle()
             assertEquals(f, sb.currentFix.value)

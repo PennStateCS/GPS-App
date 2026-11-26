@@ -262,7 +262,8 @@ object GnssModule {
             // Non-internal fixes: FixDatumNormalizer.toWgs84 with the current receiver datum (unchanged
             // maths), recording the datum used per fix. The tilt monitor then notes each published fix's arrival
             // time (identity-keyed, status only; the fix is returned unchanged) so ETC pairing never depends on
-            // when a subscriber gets round to processing it.
+            // when a subscriber gets round to processing it. If normalise throws, the switchboard drops the fix
+            // and withdraws the live position (fail closed); recordArrival never throws.
             fixTransform   = { fix -> tiltMonitor.recordArrival(feedDatum.normalise(fix)) },
         ).also {
             it.start()

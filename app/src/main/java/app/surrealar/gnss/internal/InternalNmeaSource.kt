@@ -18,6 +18,7 @@ import io.github.pennstatecs.geokit.gnss.bus.adapters.GsvMessage
 import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaFuser
 import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaSource
 import app.surrealar.gnss.diagnostics.DiagnosticsService
+import app.surrealar.gnss.diagnostics.raw.RawNmeaTaps
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.Provider
 import io.github.pennstatecs.geokit.gnss.nmea.parse.NmeaRegistry
@@ -100,6 +101,25 @@ class InternalNmeaSource(
             _gsv.tryEmit(gsv)
         }
     )
+
+    /**
+     * One OnNmeaMessageListener message. Runs on the main looper: an exception from an odd sentence anywhere
+     * downstream (fusion, fix listeners) would kill the app, so it is logged (throttled) and that one sentence
+     * dropped. The diagnostic hooks (raw recording tap, then diagnostics counters) run before fusion, each in
+     * its own guard, so a failing hook can never drop the sentence before the fuser sees it.
+     */
+    internal fun acceptListenerMessage(message: String) {
+        try {
+            onRawLine?.let { hook -> RawNmeaTaps.isolated("internal.rawLine") { hook(message) } }
+            diagnostics?.let { d -> RawNmeaTaps.isolated("internal.diagnostics") { d.recordLine(message) } }
+            fuser.accept(message)
+            debugSampler.accept(message) { "GnssStatus used=$platformSatsUsed visible=$platformSatsVisible" }
+        } catch (e: Exception) {
+            DiagnosticsLogger.every("NMEA", "internal.listener.error", 60_000L, 'E', throwable = e) {
+                "Device GNSS NMEA processing failed: sentence dropped, repeats suppressed for 60 s"
+            }
+        }
+    }
 
     // ── Platform fallback (devices without usable NMEA) — see PlatformFallback ──
     @Volatile private var registeredAtMs = 0L
@@ -298,21 +318,7 @@ class InternalNmeaSource(
             // Continue — on some devices/OS versions the NMEA listener alone still delivers data.
         }
 
-        val listener = OnNmeaMessageListener { message, _ ->
-            // Runs on the main looper: an exception from an odd sentence anywhere downstream (fusion,
-            // fix listeners) would kill the app. Log it (throttled) and drop that one sentence.
-            try {
-                // Raw recording tap (Developer Tools; a no-op unless recording), then diagnostics, before fusion.
-                onRawLine?.invoke(message)
-                diagnostics?.recordLine(message)
-                fuser.accept(message)
-                debugSampler.accept(message) { "GnssStatus used=$platformSatsUsed visible=$platformSatsVisible" }
-            } catch (e: Exception) {
-                DiagnosticsLogger.every("NMEA", "internal.listener.error", 60_000L, 'E', throwable = e) {
-                    "Device GNSS NMEA processing failed: sentence dropped, repeats suppressed for 60 s"
-                }
-            }
-        }
+        val listener = OnNmeaMessageListener { message, _ -> acceptListenerMessage(message) }
 
         try {
             if (!hasLocationPermission()) {
