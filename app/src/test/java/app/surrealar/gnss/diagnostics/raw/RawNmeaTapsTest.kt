@@ -16,6 +16,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -80,9 +81,97 @@ class RawNmeaTapsTest {
         val hook = RawNmeaTaps.externalOnLine(r, { throw IllegalStateException("SYNTHETIC") }, { })
         r.start(RawNmeaDuration.MANUAL)
         val line = gga("120000.00", "4118.0")
-        runCatching { hook(line) }
+        hook(line)                                         // never throws (stabilization item 8)
         r.stop(); advanceUntilIdle()
         assertEquals("$line\r\n", (r.state.value as RawNmeaState.Finished).result.nmeaFile.readText())
+    }
+
+    @Test fun `each hook is isolated - a throwing hook neither throws out nor skips the hooks after it`() = runTest {
+        val r = recorder(capacity = 64)
+        val calls = mutableListOf<String>()
+        val hook = RawNmeaTaps.externalOnLine(
+            r,
+            recordDiagnostics = { calls += "diag:$it"; if (it.contains("120000.20")) throw IllegalStateException("SYNTHETIC diag") },
+            tiltMonitor = { calls += "tilt:$it"; throw RuntimeException("SYNTHETIC tilt") },
+        )
+        r.start(RawNmeaDuration.MANUAL)
+        val lines = listOf(gga("120000.00", "4118.0"), gga("120000.20", "4118.0"), gga("120000.40", "4118.0"))
+        lines.forEach(hook)                                 // a throw here would fail the test
+        assertEquals(lines.flatMap { listOf("diag:$it", "tilt:$it") }, calls)
+        r.stop(); advanceUntilIdle()
+        val res = (r.state.value as RawNmeaState.Finished).result
+        assertEquals(lines.joinToString("") { "$it\r\n" }, res.nmeaFile.readText())
+        assertTrue(res.complete)
+    }
+
+    @Test fun `isolated swallows a hook failure and continues`() {
+        val calls = mutableListOf<String>()
+        RawNmeaTaps.isolated("test.a") { calls += "a"; throw IllegalStateException("SYNTHETIC") }
+        RawNmeaTaps.isolated("test.b") { calls += "b" }
+        assertEquals(listOf("a", "b"), calls)
+    }
+
+    /**
+     * Real TcpNmeaSource (geokit, unchanged) over loopback: its `onLine` runs inside the same `try` as
+     * `fuser.accept`, so a throwing raw hook drops every sentence before parsing (no fixes at all). Through
+     * RawNmeaTaps, with every diagnostic hook throwing, the sentences still reach the fuser and fixes come out.
+     */
+    @Test(timeout = 60_000)
+    fun `throwing diagnostic hooks no longer drop TCP sentences before the fuser`() = runBlocking {
+        val lines = (0 until 6).flatMap { i ->
+            val t = "1200%02d.00".format(i)
+            listOf(gga(t, "4118.0"), rmc(t, "4118.0"))
+        }
+
+        fun fixesWith(onLine: (String) -> Unit, scope: CoroutineScope): Int {
+            val server = ServerSocket(0)
+            val serverThread = thread {
+                server.accept().use { s ->
+                    val out = s.getOutputStream()
+                    lines.forEach { out.write("$it\r\n".toByteArray(Charsets.US_ASCII)); out.flush(); Thread.sleep(20) }
+                    Thread.sleep(800)
+                }
+            }
+            val fixes = java.util.Collections.synchronizedList(mutableListOf<Fix>())
+            val tcp = TcpNmeaSource(
+                scope = scope, endpoint = { "127.0.0.1" to server.localPort },
+                registry = DefaultNmeaRegistry.create(verifyChecksum = true, requireChecksum = true),
+                onLine = onLine, readTimeoutMs = 2_000,
+            )
+            val collector = scope.launch { tcp.parsedFixes().collect { fixes += it } }
+            try {
+                tcp.start()
+                serverThread.join(10_000)
+                Thread.sleep(300)
+                return fixes.size
+            } finally {
+                tcp.stop(); collector.cancel(); server.close()
+            }
+        }
+
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            // Before: a raw throwing hook (what an unguarded diagnostics/tilt hook did) → nothing is fused.
+            val rawFixes = fixesWith({ throw IllegalStateException("SYNTHETIC") }, scope)
+            assertEquals("unguarded throwing hook: TcpNmeaSource drops every sentence", 0, rawFixes)
+
+            // After: all three hooks throw inside RawNmeaTaps; the fuser still gets every sentence.
+            val idleRecorder = RawNmeaRecorder(
+                scope = scope, ioDispatcher = Dispatchers.IO, files = RawNmeaFiles { File(tmp.root, "idle") },
+                metadata = { externalMeta }, monoClockMs = { System.nanoTime() / 1_000_000 }, statsPublishIntervalMs = 0,
+            )
+            val seen = java.util.Collections.synchronizedList(mutableListOf<String>())
+            val guarded = RawNmeaTaps.externalOnLine(
+                idleRecorder,
+                recordDiagnostics = { seen += it; throw IllegalStateException("SYNTHETIC diag") },
+                tiltMonitor = { throw IllegalStateException("SYNTHETIC tilt") },
+            )
+            val guardedFixes = fixesWith(guarded, scope)
+            assertTrue("sentences reached the fuser despite throwing hooks: fixes=$guardedFixes", guardedFixes >= 5)
+            assertEquals("hooks still see every line, in order", lines, seen.toList())
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test fun `fixture fusion output is identical with and without an active recording`() = runTest {
