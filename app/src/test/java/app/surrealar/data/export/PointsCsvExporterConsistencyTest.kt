@@ -55,7 +55,7 @@ class PointsCsvExporterConsistencyTest {
     @Test fun `SPCS2022 loading for the FIRST point - legacy overload no longer switches the file to latitude-longitude`() {
         val conv = converter(loading = setOf("P1"))
         val s = spcs()
-        val lines = PointsCsvExporter.build(listOf(point("P1"), point("P2"), point("P3", 40.8)) { conv(it, s) }).trim().lines()
+        val lines = PointsCsvExporter.build(listOf(point("P1"), point("P2"), point("P3", 40.8))) { conv(it, s) }.trim().lines()
         // Before the fix: header "Latitude,Longitude" from P1's fallback, then P2/P3 grid values under it.
         assertEquals("Point,Northing (m),Easting (m),Elevation (m h),Description,System", lines[0])
         assertEquals("P1,,,,,unavailable: SPCS2022 zone data is loading", lines[1])

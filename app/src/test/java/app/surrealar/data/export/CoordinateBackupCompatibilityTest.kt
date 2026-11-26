@@ -137,7 +137,7 @@ class CoordinateBackupCompatibilityTest {
             "timestamp":1700000000000,"color":5,"provider":"RS2_TCP","crsEpsg":6319,"icon":"ic_pin","modelId":"m1",
             "modelScale":2.0,"modelYawDeg":45.0,"horizontalAccuracyM":0.012,"rtkStatus":"FIX"}]}"""
         val repo = FakeCoordinateRepository()
-        val plan = useCase(repo, models = listOf(Model(id = "m1", name = "Barn", fileName = "barn.glb", filePath = "models/barn.glb", fileSize = 1L, dateAdded = 0L)))(old, replace = false)
+        val plan = useCase(repo, models = listOf(Model(id = "m1", name = "Barn", fileName = "barn.glb", filePath = "models/barn.glb", fileSize = 1L, dateAdded = 0L, fileType = app.surrealar.domain.model.FileType.MESH_MODEL)))(old, replace = false)
         assertTrue(plan.skippedInvalid.isEmpty())
         assertTrue(plan.missingModelRefs.isEmpty())
         val c = repo.store.single()

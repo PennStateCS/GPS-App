@@ -273,7 +273,9 @@ class CoordinateBackupFidelityTest {
     fun schemaVersion_isReported_andDefaultsTo1() {
         assertEquals(1, roundTrip(minimal()).schemaVersion)
         assertEquals(1, CoordinateBackup.parse("""{"coordinates":[]}""").schemaVersion)
-        assertEquals(7, CoordinateBackup.parse("""{"schemaVersion":7,"coordinates":[]}""").schemaVersion)
+        // Stabilization (item 10): a newer format is rejected before any write, never read as an older one.
+        assertTrue(runCatching { CoordinateBackup.parse("""{"schemaVersion":7,"coordinates":[]}""") }
+            .exceptionOrNull() is CoordinateBackup.UnsupportedBackupException)
     }
 
     @Test
@@ -337,10 +339,12 @@ class CoordinateBackupFidelityTest {
     }
 
     @Test
-    fun foreignJsonObject_yieldsNothing() {
-        val result = CoordinateBackup.parse("""{"type":"FeatureCollection","features":[{"type":"Feature"}]}""")
-        assertTrue(result.coordinates.isEmpty())
-        assertTrue(result.skippedInvalid.isEmpty())
+    fun foreignJsonObject_isRejected_notReadAsAnEmptyBackup() {
+        // Stabilization (item 10): a JSON object without a coordinate list is damaged / not a SurReal backup:
+        // a clear error, nothing imported or replaced (it used to read as an empty backup).
+        val e = runCatching { CoordinateBackup.parse("""{"type":"FeatureCollection","features":[{"type":"Feature"}]}""") }
+            .exceptionOrNull()
+        assertTrue(e is CoordinateBackup.UnsupportedBackupException)
     }
 
     @Test

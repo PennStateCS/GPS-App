@@ -91,7 +91,7 @@ class CoordinateBackupTest {
 
     @Test
     fun rowWithoutAltitude_isSkippedAndReported_notImportedAt0m() {
-        val json = """{"schemaVersion":2,"coordinates":[
+        val json = """{"schemaVersion":1,"coordinates":[
             {"id":"ok","name":"Has height","latitude":41.3,"longitude":-76.0,"altitude":363.4},
             {"id":"noalt","name":"No height","latitude":41.3,"longitude":-76.0},
             {"id":"nullalt","name":"Null height","latitude":41.3,"longitude":-76.0,"altitude":null}
