@@ -68,6 +68,8 @@ object ReceiverModule {
         receiverDevices: ReceiverDeviceManager,
         captureTracker: app.surrealar.ui.capture.ActiveCaptureTracker,
         discovery: EmlidDiscovery,
+        switchboard: app.surrealar.gnss.bus.FixSwitchboard,
+        endpointTracker: app.surrealar.gnss.external.ExternalEndpointTracker,
     ): app.surrealar.receiver.selection.ReceiverConnectionController =
         app.surrealar.receiver.selection.ReceiverConnectionController(
             settings = settings,
@@ -79,6 +81,9 @@ object ReceiverModule {
             captureActive = captureTracker.active,
             discovery = discovery,
             restartDevice = receiverDevices::restartDevice,
+            // Stabilization item 4: the live fix and the adapter's endpoint, for liveSource.
+            liveFix = switchboard.currentFix,
+            externalEndpoint = endpointTracker.attempts,
         )
 
     /**

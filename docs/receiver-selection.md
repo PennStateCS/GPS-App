@@ -29,8 +29,9 @@ Settings → Receiver (`ReceiverSettingsController`, the receiver card) and the 
 | `attempt` | `Idle` → `Testing` → (`Switching` → `Succeeded`) or `Failed(error)` |
 | `identity`, `mismatch` | what the receiver reported; whether it disagrees with the profile |
 | `captureActive`, `recent`, `scan` | capture flag, recent receivers, network scan |
+| `selectionSaveError` | device GNSS is active but its selection could not be saved (stabilization item 6) |
 
-`events` carries one-off notices (`ProfileAutoApplied`) for a snackbar.
+`events` carries one-off notices (`ProfileAutoApplied`) for a snackbar. `liveSource` is the actual live positioning source (see "Live source vs selected receiver").
 
 ## Test before switch
 
@@ -72,6 +73,45 @@ only if device GNSS was not selected after it. Settings writes are serialised by
   Emlid receivers" button); it returns false otherwise.
 - **Probe cancellation.** Cancelling the TCP probe closes its socket at once (a receiver that accepts and never
   answers is not held for the 5 s window).
+
+### Stabilization (survey/stab-s3)
+
+- **Probe validation (item 9).** The sniff counts a line as NMEA only when it has the NMEA shape (`$`, talker +
+  type, comma fields, `*` + two hex digits at the end) **and** geokit's live-stream registry (checksum required, the
+  profiles' extra parsers; the same configuration as the live TCP source) parses it. Valid sentences without a
+  position (GGA quality 0, RMC status V, only GSV/GSA) are reachable: `RECEIVING_NMEA_NO_POSITION`, reported as
+  `Succeeded.noPositionYet` / `Reachable.noPositionYet`. `$` text that never validates is `INVALID_NMEA` →
+  `ConnectError.NotNmea(port, malformedNmea = true)` ("not valid NMEA … check the port and that the output format is
+  NMEA 0183"). Still generic: no vendor request, no RTK state required. End of stream decides at once.
+- **Switching races (item 6).** Every settings write goes through `switchLock`. A commit that is already saving
+  (NonCancellable) when device GNSS is chosen finishes its write, does not activate (`internalSeq > id`), and the
+  device GNSS save queued behind it writes Internal last. Device GNSS is saved in one transaction
+  (`SettingsRepository.saveInternalSource(clearReceiver)`: mock off + source Internal [+ host/port/name removed];
+  profile, origin, recent receivers kept). A device GNSS save queued behind a *newer* External commit that already
+  saved and activated is skipped. A failed save is retried once; if it still fails, device GNSS stays active and
+  `state.selectionSaveError` says the selection could not be saved. Residual: the obsolete commit's host/port/name
+  remain saved (with source Internal) because its write was already in flight.
+- **Live source (item 4).** `liveSource: StateFlow<LiveSourceState>` is the actual positioning source, separate from
+  the selected receiver (see below).
+
+## Live source vs selected receiver
+
+`ReceiverConnectionController.liveSource` (`LiveSourceRules.derive`, pure):
+
+| Field | Meaning |
+|---|---|
+| `kind` | `NONE` / `DEVICE` / `EXTERNAL` / `REPLAY`: what produced `fix` |
+| `fix` | `FixSwitchboard.currentFix`, only when attributable to `kind` (else null) |
+| `external` | `target`, saved `name`, `identity` — **only** when `kind == EXTERNAL` |
+| `transition` | `Testing` / `Switching` / `Connecting` / `Reconnecting` / `WaitingForPosition` / `ConnectFailed` / `ExternalNotActive` |
+
+An external fix is attributed only when External is the active provider, the link is `CONNECTED`, the endpoint the
+adapter last connected to (`ExternalEndpointTracker`, recorded from the app-side endpoint lambda of
+`TcpNmeaSource` in `GnssModule`) equals the coordinator's active target and the saved receiver, and the fix arrived
+after the last fence (switch, link reconnect, endpoint read). A fix still held from the previous receiver is never
+shown as the new one's. Identity is attached only when the receiver's report is for that host (and fresh, as
+before). Startup with External saved shows `DEVICE` (or `NONE`) + `ExternalNotActive(saved)` until the restore
+connects. The `FixSwitchboard` rebind/clear protections are unchanged.
 
 ## Identity rules
 

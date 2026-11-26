@@ -25,6 +25,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -72,7 +73,12 @@ class ReceiverConnectionControllerTest {
         settings = settings, coordinator = coordinator, scope = backgroundScope, probe = probe,
         activeProvider = sourceSettings.activeProvider, externalLink = link, deviceInfo = deviceInfo,
         captureActive = capture, discovery = discovery, clockMs = { 1_000L }, restartDevice = { restarts++ },
+        liveFix = liveFix, externalEndpoint = endpoint,
     )
+
+    /** FixSwitchboard.currentFix and ExternalEndpointTracker.attempts stand-ins (item 4). */
+    private val liveFix = MutableStateFlow<io.github.pennstatecs.geokit.gnss.model.Fix?>(null)
+    private val endpoint = MutableStateFlow(app.surrealar.gnss.external.ExternalEndpointTracker.Attempt(0L, null, null))
 
     private fun TestScope.controller(discovery: ReceiverDiscovery? = null) = newController(discovery).also { runCurrent() }
 
@@ -139,6 +145,33 @@ class ReceiverConnectionControllerTest {
         c.connect(ConnectRequest("192.168.42.7", 9002))
         runCurrent()
         assertEquals(ConnectError.NotNmea(9002), (c.state.value.attempt as ConnectionAttempt.Failed).error)
+        assertWorkingExternalUnchanged()
+    }
+
+    @Test fun `a receiver streaming valid NMEA without a fix is reachable and switched to`() = runTest {
+        val c = controller()
+        probe.next().complete(TcpProbeResult.RECEIVING_NMEA_NO_POSITION)
+        c.connect(ConnectRequest("192.168.42.7", 9001))
+        runCurrent()
+        val a = c.state.value.attempt as ConnectionAttempt.Succeeded
+        assertTrue("reported as reachable without a position yet", a.noPositionYet)
+        assertEquals(ProviderChoice.EXTERNAL_TCP, provider.value)
+        assertEquals(LocationSourceType.EXTERNAL, settings.source.value)
+
+        probe.next().complete(TcpProbeResult.RECEIVING_NMEA_NO_POSITION)
+        assertEquals(ReceiverTestResult.Reachable(ReceiverTarget("10.0.0.5", 9000), null, noPositionYet = true),
+            c.test(ConnectRequest("10.0.0.5", 9000, profile = ExternalReceiverProfile.GENERIC_NMEA_TCP)))
+    }
+
+    @Test fun `dollar text that is not valid NMEA fails with an actionable message and changes nothing`() = runTest {
+        workingExternal()
+        val c = controller()
+        probe.next().complete(TcpProbeResult.INVALID_NMEA)
+        c.connect(ConnectRequest("192.168.42.7", 9002))
+        runCurrent()
+        val e = (c.state.value.attempt as ConnectionAttempt.Failed).error
+        assertEquals(ConnectError.NotNmea(9002, malformedNmea = true), e)
+        assertTrue(e.message, e.message.contains("not valid NMEA"))
         assertWorkingExternalUnchanged()
     }
 
@@ -628,6 +661,147 @@ class ReceiverConnectionControllerTest {
         assertEquals(1, reconnects.size)
     }
 
+    // ── item 6: switching / persistence races (controlled suspension points, no timing) ─────────
+
+    /** Saved selection and active provider agree. */
+    private fun assertConsistent(expected: LocationSourceType) {
+        assertEquals("saved selection", expected, settings.source.value)
+        assertEquals("active provider",
+            if (expected == LocationSourceType.EXTERNAL) ProviderChoice.EXTERNAL_TCP else ProviderChoice.INTERNAL, provider.value)
+    }
+
+    @Test fun `device GNSS chosen while a passed test is saving - the commit never activates and Internal is saved last`() = runTest {
+        workingExternal()
+        settings.profile.value = ExternalReceiverProfile.REACH_RS4
+        settings.name.value = "Rover"
+        val c = controller()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        settings.commitGate = gate
+        c.connect(ConnectRequest("192.168.42.7", 9002))
+        runCurrent()
+        assertTrue("suspended inside the NonCancellable commit", c.state.value.attempt is ConnectionAttempt.Switching)
+
+        c.selectInternal("picker")
+        assertEquals("device GNSS active at once", ProviderChoice.INTERNAL, provider.value)
+        runCurrent()
+        assertEquals("the device GNSS save waits for the commit (switchLock)", 0, settings.internalCommits)
+
+        gate.complete(Unit)
+        runCurrent()
+        assertConsistent(LocationSourceType.INTERNAL)
+        assertEquals(listOf("connType=TCP", "tcp=192.168.42.7:9002", "source=EXTERNAL", "mock=false", "source=INTERNAL"),
+            settings.writes.toList())
+        assertEquals(ConnectionAttempt.Idle, c.state.value.attempt)
+        assertEquals("the obsolete attempt is not remembered as connected", 0, settings.recentWrites)
+        assertEquals("no reconnect to the obsolete target", emptyList<String>(), reconnects)
+        assertEquals("receiver-specific settings kept", ExternalReceiverProfile.REACH_RS4, settings.profile.value)
+        assertNull(c.state.value.selectionSaveError)
+    }
+
+    @Test fun `A saving, B testing, then device GNSS - neither A nor B activates`() = runTest {
+        probe.ignoreCancellation = true
+        val c = controller()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        settings.commitGate = gate
+        c.connect(ConnectRequest("192.168.42.7", 9001))           // A: test passes, commit suspends
+        runCurrent()
+        val bProbe = probe.next()
+        assertEquals(ConnectStart.STARTED, c.connect(ConnectRequest("192.168.42.8", 9001)))   // B supersedes
+        runCurrent()
+        c.selectInternal()
+        gate.complete(Unit)
+        runCurrent()
+        bProbe.complete(TcpProbeResult.RECEIVING_NMEA)            // B's (uncancellable) probe still delivers
+        runCurrent()
+
+        assertConsistent(LocationSourceType.INTERNAL)
+        assertEquals("only A's commit and the device GNSS save were written", 1, settings.receiverCommits)
+        assertEquals(1, settings.internalCommits)
+        assertEquals(ConnectionAttempt.Idle, c.state.value.attempt)
+    }
+
+    @Test fun `device GNSS then a newer receiver - the newer receiver ends saved and active`() = runTest {
+        val c = controller()
+        val internalGate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        settings.internalGate = internalGate
+        workingExternal()
+        c.selectInternal()
+        runCurrent()                                             // device GNSS save suspended (holds switchLock)
+        assertEquals(ConnectStart.STARTED, c.connect(ConnectRequest("192.168.42.7", 9001)))
+        runCurrent()
+        assertTrue("B's commit waits behind the device GNSS save", c.state.value.attempt is ConnectionAttempt.Testing)
+        assertEquals(0, settings.receiverCommits)
+        internalGate.complete(Unit)
+        runCurrent()
+
+        assertConsistent(LocationSourceType.EXTERNAL)
+        assertEquals("192.168.42.7", settings.host.value)
+        assertTrue(c.state.value.attempt is ConnectionAttempt.Succeeded)
+    }
+
+    @Test fun `A saving, device GNSS, then B - B ends saved and active`() = runTest {
+        val c = controller()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        settings.commitGate = gate
+        c.connect(ConnectRequest("192.168.42.7", 9001))
+        runCurrent()
+        c.selectInternal()
+        c.connect(ConnectRequest("192.168.42.8", 9001))
+        runCurrent()
+        gate.complete(Unit)
+        runCurrent()
+        assertConsistent(LocationSourceType.EXTERNAL)
+        assertEquals("192.168.42.8", settings.host.value)
+        assertEquals(ProviderChoice.EXTERNAL_TCP, provider.value)
+        assertEquals("192.168.42.8" to 9001, coordinator.activeExternalTarget)
+    }
+
+    @Test fun `a repeat tap while the passed test is saving starts nothing`() = runTest {
+        val c = controller()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        settings.commitGate = gate
+        c.connect(ConnectRequest("192.168.42.7", 9001))
+        runCurrent()
+        assertEquals(ConnectStart.DUPLICATE_IGNORED, c.connect(ConnectRequest("192.168.42.7", 9001)))
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(1, probe.tcpCalls)
+        assertEquals(1, settings.receiverCommits)
+        assertConsistent(LocationSourceType.EXTERNAL)
+    }
+
+    @Test fun `the device GNSS save is one transaction and a failed write is retried`() = runTest {
+        workingExternal()
+        settings.mock.value = true
+        val c = controller()
+        settings.failInternalSaves = 1
+        c.selectInternal()
+        runCurrent()
+        assertConsistent(LocationSourceType.INTERNAL)
+        assertEquals(false, settings.mock.value)
+        assertEquals(1, settings.internalCommits)
+        assertNull(c.state.value.selectionSaveError)
+        assertEquals("host/port kept (selectInternal)", "192.168.42.1", settings.host.value)
+    }
+
+    @Test fun `a device GNSS save that keeps failing is reported, never half-applied`() = runTest {
+        workingExternal()
+        settings.mock.value = true
+        val c = controller()
+        settings.failInternalSaves = 2
+        c.selectInternal()
+        runCurrent()
+        assertEquals("device GNSS stays active (the user's choice)", ProviderChoice.INTERNAL, provider.value)
+        assertEquals("nothing half-applied", true, settings.mock.value)
+        assertEquals(LocationSourceType.EXTERNAL, settings.source.value)
+        assertTrue(c.state.value.selectionSaveError != null)
+        // The next successful save clears it.
+        c.selectInternal()
+        runCurrent()
+        assertConsistent(LocationSourceType.INTERNAL)
+        assertNull(c.state.value.selectionSaveError)
+    }
+
     @Test fun `a reconnect keeps the saved name and a reported name fills a blank one`() = runTest {
         workingExternal()
         settings.name.value = "Base"
@@ -650,5 +824,144 @@ class ReceiverConnectionControllerTest {
         deviceInfo.value = ReceiverDeviceInfo(host = "192.168.42.7", name = "other-name", model = "Reach RS2+", firmware = "34.10", serial = "SN7")
         runCurrent()
         assertEquals("My rover", settings.name.value)
+    }
+
+    // ── item 4: live positioning source vs selected receiver (controller integration) ──────────
+
+    private fun extFix(t: Long) = LiveSourceRulesTest.fix(io.github.pennstatecs.geokit.gnss.model.Provider.EXTERNAL_TCP, t)
+    private fun devFix(t: Long) = LiveSourceRulesTest.fix(io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL, t)
+    private fun endpointRead(host: String, port: Int) {
+        endpoint.value = app.surrealar.gnss.external.ExternalEndpointTracker.Attempt(endpoint.value.seq + 1, host, port)
+    }
+
+    @Test fun `startup with External saved - device fixes first, then the restored receiver once its own fix arrives`() = runTest {
+        settings.source.value = LocationSourceType.EXTERNAL
+        settings.host.value = "192.168.42.1"; settings.port.value = 9001; settings.name.value = "Base"
+        val c = controller()
+        assertEquals(LiveSourceKind.NONE, c.liveSource.value.kind)
+        assertEquals(SourceTransition.ExternalNotActive(ReceiverTarget("192.168.42.1", 9001)), c.liveSource.value.transition)
+
+        liveFix.value = devFix(1); runCurrent()
+        assertEquals(LiveSourceKind.DEVICE, c.liveSource.value.kind)
+        assertNull("the saved receiver is not proof of the live source", c.liveSource.value.external)
+
+        // GnssSourceCoordinator.restoreSavedSourceOnStartup activates External; the switchboard clears the fix.
+        coordinator.activateExternalTcpProvider("192.168.42.1", 9001, "startup")
+        liveFix.value = null
+        link.value = ConnectionState.CONNECTING; runCurrent()
+        assertEquals(SourceTransition.Connecting(ReceiverTarget("192.168.42.1", 9001)), c.liveSource.value.transition)
+        endpointRead("192.168.42.1", 9001)
+        link.value = ConnectionState.CONNECTED; runCurrent()
+        assertEquals(SourceTransition.WaitingForPosition(ReceiverTarget("192.168.42.1", 9001)), c.liveSource.value.transition)
+
+        val f = extFix(2)
+        liveFix.value = f; runCurrent()
+        val live = c.liveSource.value
+        assertEquals(LiveSourceKind.EXTERNAL, live.kind)
+        assertSame(f, live.fix)
+        assertEquals("Base", live.external!!.name)
+        assertNull(live.transition)
+
+        // A fresh report for this host attaches the identity.
+        deviceInfo.value = info("Reach RS4"); runCurrent()
+        assertEquals("SN1", c.liveSource.value.external!!.identity!!.serial)
+    }
+
+    @Test fun `rapid switching A to B to device GNSS never shows A's fix as B's`() = runTest {
+        workingExternal()
+        endpointRead("192.168.42.1", 9001)
+        deviceInfo.value = info("Reach RS4", serial = "SN-A")
+        val c = controller()
+        val fa = extFix(1)
+        liveFix.value = fa; runCurrent()
+        assertEquals(LiveSourceKind.EXTERNAL, c.liveSource.value.kind)
+        assertEquals("SN-A", c.liveSource.value.external!!.identity!!.serial)
+
+        val bProbe = probe.next()
+        c.connect(ConnectRequest("192.168.42.7", 9001)); runCurrent()
+        assertEquals("A stays live while B is tested", LiveSourceKind.EXTERNAL, c.liveSource.value.kind)
+        assertEquals(SourceTransition.Testing(ReceiverTarget("192.168.42.7", 9001)), c.liveSource.value.transition)
+
+        bProbe.complete(TcpProbeResult.RECEIVING_NMEA); runCurrent()
+        // Switched to B (adapter told to reconnect); the switchboard still holds A's last fix.
+        assertSame(fa, liveFix.value)
+        val s = c.liveSource.value
+        assertEquals(LiveSourceKind.NONE, s.kind)
+        assertNull("A's identity is cleared on the receiver change", s.external)
+        assertEquals(SourceTransition.Connecting(ReceiverTarget("192.168.42.7", 9001)), s.transition)
+
+        // Device GNSS before B produced anything.
+        c.selectInternal(); liveFix.value = null; runCurrent()
+        assertEquals(LiveSourceKind.NONE, c.liveSource.value.kind)
+        assertNull(c.liveSource.value.external)
+        liveFix.value = devFix(3); runCurrent()
+        assertEquals(LiveSourceKind.DEVICE, c.liveSource.value.kind)
+        assertNull(c.liveSource.value.transition)
+    }
+
+    @Test fun `switch to B - only a fix after B's connection is attributed to B`() = runTest {
+        workingExternal()
+        endpointRead("192.168.42.1", 9001)
+        val c = controller()
+        val fa = extFix(1)
+        liveFix.value = fa; runCurrent()
+        c.connect(ConnectRequest("192.168.42.7", 9001)); runCurrent()
+
+        // The adapter reconnects: endpoint B read, link drops and comes back.
+        endpointRead("192.168.42.7", 9001)
+        link.value = ConnectionState.CONNECTING; runCurrent()
+        link.value = ConnectionState.CONNECTED; runCurrent()
+        assertEquals("A's held fix is still not B's", LiveSourceKind.NONE, c.liveSource.value.kind)
+        assertEquals(SourceTransition.WaitingForPosition(ReceiverTarget("192.168.42.7", 9001)), c.liveSource.value.transition)
+
+        val fb = extFix(2)
+        liveFix.value = fb; runCurrent()
+        assertEquals(LiveSourceKind.EXTERNAL, c.liveSource.value.kind)
+        assertSame(fb, c.liveSource.value.fix)
+        assertEquals(ReceiverTarget("192.168.42.7", 9001), c.liveSource.value.external!!.target)
+        assertNull("A's report (other host) is not B's identity", c.liveSource.value.external!!.identity)
+    }
+
+    @Test fun `reconnecting shows a transition and the first fix after the reconnect restores the receiver`() = runTest {
+        workingExternal()
+        endpointRead("192.168.42.1", 9001)
+        val c = controller()
+        val f1 = extFix(1)
+        liveFix.value = f1; runCurrent()
+        link.value = ConnectionState.RECONNECTING; runCurrent()
+        assertEquals(LiveSourceKind.NONE, c.liveSource.value.kind)
+        assertEquals(SourceTransition.Reconnecting(ReceiverTarget("192.168.42.1", 9001)), c.liveSource.value.transition)
+        endpointRead("192.168.42.1", 9001)
+        link.value = ConnectionState.CONNECTED; runCurrent()
+        assertEquals("the pre-drop fix is fenced", LiveSourceKind.NONE, c.liveSource.value.kind)
+        liveFix.value = extFix(2); runCurrent()
+        assertEquals(LiveSourceKind.EXTERNAL, c.liveSource.value.kind)
+    }
+
+    @Test fun `a failed connection keeps device GNSS live and reports the failure`() = runTest {
+        val c = controller()
+        liveFix.value = devFix(1)
+        probe.next().complete(TcpProbeResult.CONNECT_FAILED)
+        c.connect(ConnectRequest("192.168.42.7", 9001)); runCurrent()
+        assertEquals(LiveSourceKind.DEVICE, c.liveSource.value.kind)
+        assertEquals(SourceTransition.ConnectFailed(ReceiverTarget("192.168.42.7", 9001), ConnectError.Unreachable(9001)),
+            c.liveSource.value.transition)
+    }
+
+    @Test fun `a source change during a capture needs confirmation and drops the old identity at once`() = runTest {
+        workingExternal()
+        endpointRead("192.168.42.1", 9001)
+        deviceInfo.value = info("Reach RS4", serial = "SN-A")
+        capture.value = true
+        val c = controller()
+        liveFix.value = extFix(1); runCurrent()
+        assertEquals(ConnectStart.NEEDS_CAPTURE_CONFIRMATION, c.connect(ConnectRequest("192.168.42.7", 9001)))
+        assertEquals("nothing changed without confirmation", LiveSourceKind.EXTERNAL, c.liveSource.value.kind)
+
+        c.connect(ConnectRequest("192.168.42.7", 9001), confirmCaptureStop = true); runCurrent()
+        assertEquals(ProviderChoice.EXTERNAL_TCP, provider.value)
+        assertEquals(LiveSourceKind.NONE, c.liveSource.value.kind)
+        assertNull(c.liveSource.value.external)
+        assertNull(c.liveSource.value.fix)
     }
 }

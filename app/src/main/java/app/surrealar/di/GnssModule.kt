@@ -86,6 +86,12 @@ object GnssModule {
             extraParsers = app.surrealar.settings.model.ExternalReceiverProfile.allExtraParsers(),
         )
 
+    /** Which endpoint the external NMEA source connected to (stabilization item 4: live source identity). */
+    @Provides
+    @Singleton
+    fun provideExternalEndpointTracker(): app.surrealar.gnss.external.ExternalEndpointTracker =
+        app.surrealar.gnss.external.ExternalEndpointTracker()
+
     // NMEA source for external RS2+ adapter (TCP NMEA stream)
     @Provides
     @Singleton
@@ -96,13 +102,15 @@ object GnssModule {
         diagnosticsService: DiagnosticsService,
         tiltMonitor: app.surrealar.receiver.tilt.ReceiverTiltMonitor,
         rawRecorder: app.surrealar.gnss.diagnostics.raw.RawNmeaRecorder,
+        endpointTracker: app.surrealar.gnss.external.ExternalEndpointTracker,
     ): NmeaSource = TcpNmeaSource(
         scope    = appScope,
-        // Saved host/port, read once per connection attempt; null when either is missing.
+        // Saved host/port, read once per connection attempt; null when either is missing. Each read is recorded
+        // (passively: the value is returned unchanged) so the app knows which receiver the live stream comes from.
         endpoint = {
             val host = settingsRepository.externalTcpHost.first()
             val port = settingsRepository.externalTcpPort.first()
-            if (host.isNullOrBlank() || port == null) null else host to port
+            endpointTracker.record(if (host.isNullOrBlank() || port == null) null else host to port)
         },
         registry = registry,
         // Developer raw NMEA recording tap (non-blocking queue offer; a no-op unless recording), then the live

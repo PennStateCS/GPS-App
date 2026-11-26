@@ -59,6 +59,7 @@ internal class FakeReceiverSettings(
         host: String, port: Int, name: String, profile: ExternalReceiverProfile?, origin: ProfileOrigin,
         source: LocationSourceType,
     ) {
+        commitGate?.let { commitGate = null; it.await() }
         if (failNextCommit) {
             failNextCommit = false
             throw java.io.IOException("simulated DataStore write failure")
@@ -73,6 +74,32 @@ internal class FakeReceiverSettings(
         if (profile != null) { this.profile.value = profile; this.origin.value = origin }
         this.source.value = source
         receiverCommits++
+    }
+
+    /**
+     * When set, the next [saveExternalTcpReceiver] suspends on it before applying anything (a slow DataStore write):
+     * lets a test interleave other calls at that exact point.
+     */
+    var commitGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+    /** As [commitGate], for the next [saveInternalSource]. */
+    var internalGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+    /** Makes the next N [saveInternalSource] calls fail (nothing applied). */
+    var failInternalSaves = 0
+    /** [saveInternalSource] transactions applied. */
+    var internalCommits = 0
+
+    /** One transaction, like SettingsRepositoryImpl: logs mock=false, source=INTERNAL [, clearTcp], or nothing on failure. */
+    override suspend fun saveInternalSource(clearReceiver: Boolean) {
+        internalGate?.let { internalGate = null; it.await() }
+        if (failInternalSaves > 0) {
+            failInternalSaves--
+            throw java.io.IOException("simulated DataStore write failure")
+        }
+        listOfNotNull("mock=false", "source=INTERNAL", "clearTcp".takeIf { clearReceiver }).forEach(::write)
+        mock.value = false
+        source.value = LocationSourceType.INTERNAL
+        if (clearReceiver) { host.value = null; port.value = null; name.value = null }
+        internalCommits++
     }
 
     override suspend fun clearExternalTcp() { write("clearTcp"); host.value = null; port.value = null; name.value = null }

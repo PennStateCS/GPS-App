@@ -32,7 +32,9 @@ object SocketReceiverProbe : ReceiverProbe {
     private const val TAG = "ReceiverProbe"
 
     /**
-     * Connects (4 s) and reads lines for up to 5 s: the first line starting with `$` is NMEA. Cancellable: cancelling
+     * Connects (4 s) and reads lines for up to 5 s, classified by [NmeaProbeClassifier]: it ends early on a valid
+     * sentence with a position, or on a valid GGA/RMC that reports no position; otherwise the window decides (valid
+     * NMEA without a position, `$` text that is not valid NMEA, RTCM/binary, or nothing). Cancellable: cancelling
      * the caller closes the socket at once, which ends a blocking connect or read (a receiver that accepts and never
      * answers is not held for the full window).
      */
@@ -67,15 +69,22 @@ object SocketReceiverProbe : ReceiverProbe {
             runCatching { socket.soTimeout = 3000 }
             reader = BufferedReader(InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII))
             val deadline = System.currentTimeMillis() + 5000L
-            var sawNonNmea = false
+            val classifier = NmeaProbeClassifier()
             while (System.currentTimeMillis() < deadline) {
                 ensureActive()
-                val line = withTimeoutOrNull(1000L) { runCatching { reader.readLine() }.getOrNull() }
-                    ?: continue
-                if (line.startsWith("$")) return@coroutineScope TcpProbeResult.RECEIVING_NMEA
-                if (line.isNotEmpty()) sawNonNmea = true
+                val read = withTimeoutOrNull(1000L) { runCatching { reader.readLine() } } ?: continue
+                // A read timeout (no line for soTimeout) keeps waiting until the window ends; end of stream (the peer
+                // closed) or another read error decides from what arrived.
+                if (read.exceptionOrNull() is java.net.SocketTimeoutException) continue
+                val line = read.getOrNull() ?: break
+                classifier.offer(line)?.let { return@coroutineScope it }
             }
-            if (sawNonNmea) TcpProbeResult.RECEIVING_RTCM_OR_BIN else TcpProbeResult.CONNECTED_NO_DATA
+            classifier.verdict().also {
+                DevLog.d(TAG) {
+                    "TCP probe window ended port=$port result=$it valid=${classifier.validSentences} " +
+                        "invalidDollar=${classifier.invalidDollarLines} other=${classifier.otherLines}"
+                }
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

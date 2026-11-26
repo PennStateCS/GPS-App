@@ -209,4 +209,25 @@ class SettingsRepositorySingleEditTest {
         assertEquals("", repo.externalTcpName.first())
         assertEquals("10.0.0.2", repo.externalTcpHost.first())
     }
+
+    /** Stabilization item 6: device GNSS is saved in one edit (mock off + source Internal [+ clear]); the profile stays. */
+    @Test
+    fun internalSource_oneEdit_keepsProfileAndOptionallyClearsReceiver() = runBlocking {
+        oneEdit {
+            repo.saveExternalTcpReceiver("10.0.0.1", 9001, "Rover", ExternalReceiverProfile.REACH_RS4,
+                app.surrealar.settings.model.ProfileOrigin.USER, app.surrealar.domain.model.LocationSourceType.EXTERNAL)
+        }
+        repo.setMockLocationEnabled(true)
+        oneEdit { repo.saveInternalSource(clearReceiver = false) }
+        assertEquals(app.surrealar.domain.model.LocationSourceType.INTERNAL, repo.locationSource.first())
+        assertEquals(false, repo.mockLocationEnabled.first())
+        assertEquals("10.0.0.1", repo.externalTcpHost.first())
+        assertEquals(9001, repo.externalTcpPort.first())
+        assertEquals(ExternalReceiverProfile.REACH_RS4, repo.externalReceiverProfile.first())
+
+        oneEdit { repo.saveInternalSource(clearReceiver = true) }
+        assertEquals(null, repo.externalTcpHost.first())
+        assertEquals(null, repo.externalTcpPort.first())
+        assertEquals(ExternalReceiverProfile.REACH_RS4, repo.externalReceiverProfile.first())
+    }
 }

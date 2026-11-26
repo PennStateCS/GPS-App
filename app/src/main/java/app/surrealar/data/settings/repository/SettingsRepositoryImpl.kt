@@ -155,6 +155,19 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.clearExternalTcp()
     }
 
+    /** One transaction (see [SettingsRepository.saveInternalSource]): a failed write changes nothing. */
+    override suspend fun saveInternalSource(clearReceiver: Boolean) {
+        local.editAll { prefs ->
+            prefs[K.MOCK_LOCATION_ENABLED] = false
+            prefs[K.LOCATION_SOURCE] = LocationSourceType.INTERNAL.prefKey
+            if (clearReceiver) {
+                prefs.remove(K.EXTERNAL_TCP_HOST)
+                prefs.remove(K.EXTERNAL_TCP_PORT)
+                prefs.remove(K.EXTERNAL_TCP_NAME)
+            }
+        }
+    }
+
     // GNSS capture averaging policy
     override val gnssCaptureSettings: Flow<GnssCaptureSettings> = combine(
         local.gnssCaptureRtkStatus,

@@ -3,6 +3,8 @@ package app.surrealar.receiver.selection
 import app.surrealar.domain.model.ExternalConnectionType
 import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.domain.repository.SettingsRepository
+import app.surrealar.gnss.external.ExternalEndpointTracker
+import io.github.pennstatecs.geokit.gnss.model.Fix
 import app.surrealar.gnss.source.GnssSourceCoordinator
 import app.surrealar.gnss.source.SourceSettings.ProviderChoice
 import app.surrealar.receiver.EmlidDiscovery
@@ -84,6 +86,10 @@ class ReceiverConnectionController(
     private val clockMs: () -> Long = System::currentTimeMillis,
     /** ReceiverDeviceManager.restartDevice: re-polls the device info after a switch / reconnect (null: none). */
     private val restartDevice: (() -> Unit)? = null,
+    /** FixSwitchboard.currentFix: the live fix of the bound provider (for [liveSource]). */
+    private val liveFix: StateFlow<Fix?> = MutableStateFlow(null),
+    /** ExternalEndpointTracker.attempts: which endpoint the external adapter connected to (null: unknown). */
+    private val externalEndpoint: StateFlow<ExternalEndpointTracker.Attempt>? = null,
 ) {
     private val _state = MutableStateFlow(ReceiverSelectionState())
     /** Everything receiver selection shows; see [ReceiverSelectionState]. */
@@ -93,11 +99,33 @@ class ReceiverConnectionController(
     /** One-off notices (automatic profile change) for a snackbar. */
     val events: SharedFlow<ReceiverSelectionEvent> = _events.asSharedFlow()
 
+    private val _liveSource = MutableStateFlow(LiveSourceState())
+    /**
+     * The ACTUAL live positioning source (stabilization item 4), as opposed to the selected receiver in [state]: which
+     * kind of source produced the current fix, the external receiver's identity only when the live fix came from
+     * that connected receiver, and the transition in progress otherwise. See [LiveSourceState] / [LiveSourceRules].
+     * Status UI (Home, toolbar, receiver card) should label the live fix from this, never from the saved receiver.
+     */
+    val liveSource: StateFlow<LiveSourceState> = _liveSource.asStateFlow()
+
+    /** The fix that was current at the last fence (switch, link reconnect, endpoint read): never attributed. */
+    @Volatile private var fencedFix: Fix? = null
+    /** The endpoint the external adapter last connected to. */
+    @Volatile private var connectedEndpoint: ReceiverTarget? = null
+    @Volatile private var lastEndpointSeq = -1L
+    private val liveLock = Any()
+
     /** Guards [attemptSeq], [internalSeq], [job] and every active-provider flip made here. */
     private val lock = Any()
     private var attemptSeq = 0
     /** [attemptSeq] value of the last switch to device GNSS (an attempt older than it must not activate). */
     private var internalSeq = 0
+    /**
+     * The most recent provider activation made here: its sequence number and whether it was External. A device GNSS
+     * save queued behind a NEWER External commit must not overwrite that commit's saved source (item 6).
+     */
+    private var lastActivationSeq = 0
+    private var lastActivationExternal = false
     private var job: Job? = null
     private var scanJob: Job? = null
 
@@ -131,6 +159,52 @@ class ReceiverConnectionController(
         }
         observe("captureActive", { captureActive }) { v -> _state.update { it.copy(captureActive = v) } }
         observe("deviceInfo", { deviceInfo }) { _ -> }
+        externalEndpoint?.let { ep ->
+            observe("externalEndpoint", { ep }) { a ->
+                // A new connection attempt: whatever fix is held now came from the previous connection.
+                if (lastEndpointSeq >= 0 && a.seq != lastEndpointSeq) fencedFix = liveFix.value
+                lastEndpointSeq = a.seq
+                connectedEndpoint = if (!a.host.isNullOrBlank() && a.port != null) ReceiverTarget(a.host.trim(), a.port) else null
+                publishLiveSource()
+            }
+        }
+        // Every selection-state change (attempt, provider, link, saved target, identity) and every live fix.
+        scope.launch { _state.collect { publishLiveSource() } }
+        scope.launch {
+            try {
+                liveFix.collect { publishLiveSource() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DiagnosticsLogger.w(DiagTags.RECEIVER, "Receiver selection could not observe the live fix", e)
+            }
+        }
+    }
+
+    /** Recomputes [liveSource] from live values (provider, link, coordinator target) and [state]. */
+    private fun publishLiveSource() {
+        try {
+            synchronized(liveLock) {
+                val s = _state.value
+                val active = coordinator.activeExternalTarget?.let { ReceiverTarget(it.first.trim(), it.second) }
+                _liveSource.value = LiveSourceRules.derive(LiveSourceRules.Input(
+                    activeProvider = activeProvider.value,
+                    fix = liveFix.value,
+                    fencedFix = fencedFix,
+                    link = externalLink?.value,
+                    connectedEndpoint = connectedEndpoint,
+                    endpointKnown = externalEndpoint != null,
+                    activeExternalTarget = active,
+                    selectedSource = s.selectedSource,
+                    savedTarget = s.savedTarget,
+                    savedName = s.savedName,
+                    attempt = s.attempt,
+                    identity = s.identity,
+                ))
+            }
+        } catch (e: Exception) {
+            DiagnosticsLogger.w(DiagTags.RECEIVER, "Live source not updated", e)
+        }
     }
 
     /**
@@ -143,10 +217,13 @@ class ReceiverConnectionController(
     private fun fenceIdentity(reason: String) {
         val current = deviceInfo.value
         staleInfo = current
+        // Likewise the fix held right now belongs to the previous unit / connection: never attributed after this.
+        fencedFix = liveFix.value
         autoAppliedKey = null
         nameFillKey = null
         if (current != null) DiagnosticsLogger.d(DiagTags.RECEIVER) { "Receiver identity waits for a fresh device report reason=\"$reason\"" }
         reevaluateIdentity()
+        publishLiveSource()
         try {
             restartDevice?.invoke()
         } catch (e: Exception) {
@@ -259,28 +336,20 @@ class ReceiverConnectionController(
             // The vendor decides whether the Emlid HTTP API may be asked: an unreadable profile asks nothing.
             val storedProfile = read("externalReceiverProfile") { settings.externalReceiverProfile.first() }
             val vendor = (request.profile ?: storedProfile)?.vendor
-            val (tcp, http) = coroutineScope {
-                val tcp = async { probe.tcp(target.host, target.port) }
-                val http = if (vendor == ReceiverVendor.EMLID) async { probe.http(target.host) } else null
-                tcp.await() to http?.await()
-            }
+            val (tcp, http) = runProbe(target, vendor)
             if (!isCurrent(id)) {
                 DiagnosticsLogger.i(DiagTags.RECEIVER, "External receiver test ignored: superseded attempt=$id")
                 return
             }
-            val error = when (tcp) {
-                TcpProbeResult.RECEIVING_NMEA -> null
-                TcpProbeResult.CONNECT_FAILED -> if (http == true) ConnectError.HttpOnly(target.port) else ConnectError.Unreachable(target.port)
-                TcpProbeResult.CONNECTED_NO_DATA -> ConnectError.NoData(target.port)
-                TcpProbeResult.RECEIVING_RTCM_OR_BIN -> ConnectError.NotNmea(target.port)
-            }
+            val error = classify(tcp, http, target.port)
             if (error != null) {
                 DiagnosticsLogger.w(DiagTags.RECEIVER,
                     "External receiver test failed: nothing changed tcp=$tcp http=${http ?: "not asked"} port=${target.port} attempt=$id")
                 finish(id, ConnectionAttempt.Failed(id, target, error))
                 return
             }
-            commit(id, target, request, storedProfile, http, confirmed, forceReconnect)
+            commit(id, target, request, storedProfile, http, confirmed, forceReconnect,
+                noPositionYet = tcp == TcpProbeResult.RECEIVING_NMEA_NO_POSITION)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -290,8 +359,8 @@ class ReceiverConnectionController(
     }
 
     /**
-     * [test]'s probe, the same as [runAttempt]'s (kept separate so the attempt code is unchanged): the TCP NMEA sniff, plus the Emlid HTTP API in parallel only when [vendor] is
-     * Emlid (an unreadable profile, null, asks nothing).
+     * The probe of [runAttempt] and [test]: the TCP NMEA sniff, plus the Emlid HTTP API in parallel only when [vendor]
+     * is Emlid (an unreadable profile, null, asks nothing).
      */
     private suspend fun runProbe(target: ReceiverTarget, vendor: ReceiverVendor?): Pair<TcpProbeResult, Boolean?> = coroutineScope {
         val tcp = async { probe.tcp(target.host, target.port) }
@@ -299,12 +368,16 @@ class ReceiverConnectionController(
         tcp.await() to http?.await()
     }
 
-    /** Null when the sniff received NMEA; otherwise why the receiver can't be used (same mapping as [runAttempt]). */
+    /**
+     * Null when the sniff received valid NMEA (with or without a position: a receiver without a fix yet is reachable);
+     * otherwise why the receiver can't be used. Used by both [runAttempt] and [test].
+     */
     private fun classify(tcp: TcpProbeResult, http: Boolean?, port: Int): ConnectError? = when (tcp) {
-        TcpProbeResult.RECEIVING_NMEA -> null
+        TcpProbeResult.RECEIVING_NMEA, TcpProbeResult.RECEIVING_NMEA_NO_POSITION -> null
         TcpProbeResult.CONNECT_FAILED -> if (http == true) ConnectError.HttpOnly(port) else ConnectError.Unreachable(port)
         TcpProbeResult.CONNECTED_NO_DATA -> ConnectError.NoData(port)
         TcpProbeResult.RECEIVING_RTCM_OR_BIN -> ConnectError.NotNmea(port)
+        TcpProbeResult.INVALID_NMEA -> ConnectError.NotNmea(port, malformedNmea = true)
     }
 
     /**
@@ -322,7 +395,8 @@ class ReceiverConnectionController(
             val error = classify(tcp, http, target.port)
             DiagnosticsLogger.i(DiagTags.RECEIVER,
                 "External receiver connection test (no switch) tcp=$tcp http=${http ?: "not asked"} port=${target.port}")
-            if (error == null) ReceiverTestResult.Reachable(target, http) else ReceiverTestResult.Failed(target, error)
+            if (error == null) ReceiverTestResult.Reachable(target, http, noPositionYet = tcp == TcpProbeResult.RECEIVING_NMEA_NO_POSITION)
+            else ReceiverTestResult.Failed(target, error)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -339,7 +413,7 @@ class ReceiverConnectionController(
      */
     private suspend fun commit(
         id: Int, target: ReceiverTarget, request: ConnectRequest, storedProfile: ExternalReceiverProfile?, http: Boolean?,
-        confirmed: Boolean, forceReconnect: Boolean,
+        confirmed: Boolean, forceReconnect: Boolean, noPositionYet: Boolean = false,
     ) {
         switchLock.withLock {
             synchronized(lock) {
@@ -376,17 +450,23 @@ class ReceiverConnectionController(
                         val sameActive = forceReconnect && isActiveExternal(target, request)
                         coordinator.activateExternalTcpProvider(target.host, target.port, reason = "settings-connect #$id")
                         if (sameActive) coordinator.reconnectExternalTcpProvider("reconnect saved receiver #$id")
+                        lastActivationSeq = id
+                        lastActivationExternal = true
+                        publishLiveSource()
                         true
                     }
                 }
-                if (activate) rememberRecent(target, (profile ?: storedProfile)?.prefKey, request.name)
+                if (activate) {
+                    _state.update { it.copy(selectionSaveError = null) }
+                    rememberRecent(target, (profile ?: storedProfile)?.prefKey, request.name)
+                }
                 activate
             }
             if (!activated) {
                 DiagnosticsLogger.i(DiagTags.RECEIVER, "External receiver not activated: device GNSS selected meanwhile attempt=$id")
                 return
             }
-            finish(id, ConnectionAttempt.Succeeded(id, target, http))
+            finish(id, ConnectionAttempt.Succeeded(id, target, http, noPositionYet))
         }
     }
 
@@ -409,9 +489,13 @@ class ReceiverConnectionController(
     }
 
     private fun switchToInternal(reason: String, clearReceiver: Boolean) {
+        val seq: Int
         synchronized(lock) {
             val cancelled = _state.value.busy
             internalSeq = ++attemptSeq
+            seq = internalSeq
+            lastActivationSeq = seq
+            lastActivationExternal = false
             job?.cancel()
             job = null
             coordinator.activateInternalProvider(reason)
@@ -420,18 +504,41 @@ class ReceiverConnectionController(
                 "External receiver ${if (clearReceiver) "disconnected" else "deselected"}: device GNSS selected" +
                     (if (cancelled) " (test cancelled)" else "") + " attempt=$attemptSeq")
         }
-        scope.launch {
-            switchLock.withLock {
-                try {
-                    settings.setMockLocationEnabled(false)
-                    settings.setLocationSource(LocationSourceType.INTERNAL)
-                    if (clearReceiver) settings.clearExternalTcp()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    DiagnosticsLogger.e(DiagTags.SETTINGS, "Settings save failed section=locationSource", e)
-                }
+        publishLiveSource()
+        // Queued behind any commit in progress (switchLock): an External commit that was already saving when device
+        // GNSS was chosen finishes its write first and does not activate (internalSeq > its id); this save then
+        // writes Internal last, so the saved selection matches the active provider.
+        scope.launch { switchLock.withLock { persistInternal(seq, clearReceiver) } }
+    }
+
+    /**
+     * Saves device GNSS for the switch [seq] in one transaction ([SettingsRepository.saveInternalSource]), unless a
+     * newer External commit has saved and activated itself meanwhile (its saved source must stand). A failed write is
+     * retried once; if it still fails the active provider stays device GNSS (the user's explicit choice) and
+     * [ReceiverSelectionState.selectionSaveError] reports that the saved selection could not be updated.
+     */
+    private suspend fun persistInternal(seq: Int, clearReceiver: Boolean) {
+        val superseded = synchronized(lock) { lastActivationExternal && lastActivationSeq > seq }
+        if (superseded) {
+            DiagnosticsLogger.i(DiagTags.GNSS, "Device GNSS save skipped: a newer receiver was saved and activated attempt=$seq")
+            return
+        }
+        var failure: Exception? = null
+        for (attempt in 1..2) {
+            try {
+                settings.saveInternalSource(clearReceiver)
+                _state.update { it.copy(selectionSaveError = null) }
+                return
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failure = e
+                DiagnosticsLogger.e(DiagTags.SETTINGS, "Settings save failed section=locationSource try=$attempt", e)
             }
+        }
+        _state.update {
+            it.copy(selectionSaveError = "Device GNSS is active, but the selection could not be saved " +
+                "(${failure?.javaClass?.simpleName ?: "error"}). Select it again; after a restart the previous source may be used.")
         }
     }
 

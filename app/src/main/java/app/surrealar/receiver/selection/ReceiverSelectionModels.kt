@@ -44,8 +44,24 @@ enum class ConnectStart {
     NOTHING_SAVED,
 }
 
-/** What the TCP NMEA sniff found on the port. */
-enum class TcpProbeResult { CONNECT_FAILED, CONNECTED_NO_DATA, RECEIVING_NMEA, RECEIVING_RTCM_OR_BIN }
+/** What the TCP NMEA sniff found on the port (see [NmeaProbeClassifier] for what counts as valid NMEA). */
+enum class TcpProbeResult {
+    CONNECT_FAILED,
+    CONNECTED_NO_DATA,
+    /** Valid NMEA (shape + checksum + parsed by the live registry) including a position (GGA fix / RMC active). */
+    RECEIVING_NMEA,
+    /**
+     * Valid NMEA but no position yet (GGA fix quality 0, RMC status V, or only satellite / other sentences): the
+     * receiver is reachable and usable; it simply has no fix at the moment.
+     */
+    RECEIVING_NMEA_NO_POSITION,
+    /** Lines starting with `$` arrived, but none was valid NMEA (bad checksum, malformed, arbitrary text). */
+    INVALID_NMEA,
+    RECEIVING_RTCM_OR_BIN;
+
+    /** The port streams NMEA the live pipeline can read (with or without a position). */
+    val reachable: Boolean get() = this == RECEIVING_NMEA || this == RECEIVING_NMEA_NO_POSITION
+}
 
 /** Why a connection test failed. Nothing was saved and the active source was not changed. */
 sealed class ConnectError(val message: String) {
@@ -58,9 +74,14 @@ sealed class ConnectError(val message: String) {
     /** The port accepted the connection but sent nothing within the test window. */
     data class NoData(val port: Int) :
         ConnectError("Connected to port $port but no NMEA arrived. Check that position streaming outputs NMEA on this port.")
-    /** The port sends data that is not NMEA (RTCM or binary). */
-    data class NotNmea(val port: Int) :
-        ConnectError("Port $port sends data that is not NMEA (RTCM or binary). Choose the NMEA output port.")
+    /**
+     * The port sends data that is not usable NMEA: RTCM or binary, or ([malformedNmea]) `$` lines that fail the NMEA
+     * checks (bad checksums, malformed or unrecognised sentences), e.g. another protocol or a corrupted stream.
+     */
+    data class NotNmea(val port: Int, val malformedNmea: Boolean = false) : ConnectError(
+        if (malformedNmea) "Port $port sends text that is not valid NMEA (bad checksums or unknown sentences). " +
+            "Check the port and that the output format is NMEA 0183."
+        else "Port $port sends data that is not NMEA (RTCM or binary). Choose the NMEA output port.")
     /**
      * A capture started while the receiver was being tested: nothing was saved or switched. Connect again and confirm
      * that switching stops the capture.
@@ -73,8 +94,12 @@ sealed class ConnectError(val message: String) {
 
 /** [ReceiverConnectionController.test] outcome: what the probe found. Nothing was saved or switched. */
 sealed interface ReceiverTestResult {
-    /** The port streams NMEA. [httpReachable] = the Emlid HTTP API answered (null: not asked, Generic NMEA). */
-    data class Reachable(val target: ReceiverTarget, val httpReachable: Boolean?) : ReceiverTestResult
+    /**
+     * The port streams valid NMEA. [httpReachable] = the Emlid HTTP API answered (null: not asked, Generic NMEA).
+     * [noPositionYet] = the sentences were valid but carried no position (no fix yet): reachable, usable, waiting.
+     */
+    data class Reachable(val target: ReceiverTarget, val httpReachable: Boolean?, val noPositionYet: Boolean = false) :
+        ReceiverTestResult
     data class Failed(val target: ReceiverTarget, val error: ConnectError) : ReceiverTestResult
     /** Blank host or a port outside 1..65535. */
     data object Invalid : ReceiverTestResult
@@ -87,8 +112,12 @@ sealed interface ConnectionAttempt {
     data class Testing(val id: Int, val target: ReceiverTarget, val profile: ExternalReceiverProfile?) : ConnectionAttempt
     /** The probe received NMEA: saving the settings and activating the source. */
     data class Switching(val id: Int, val target: ReceiverTarget) : ConnectionAttempt
-    /** [target] is now the saved and active receiver. */
-    data class Succeeded(val id: Int, val target: ReceiverTarget, val httpReachable: Boolean?) : ConnectionAttempt
+    /**
+     * [target] is now the saved and active receiver. [noPositionYet] = the test saw valid NMEA without a position
+     * (the receiver had no fix yet).
+     */
+    data class Succeeded(val id: Int, val target: ReceiverTarget, val httpReachable: Boolean?, val noPositionYet: Boolean = false) :
+        ConnectionAttempt
     /** The test failed; settings and the active source are unchanged. */
     data class Failed(val id: Int, val target: ReceiverTarget, val error: ConnectError) : ConnectionAttempt
 }
@@ -162,6 +191,11 @@ data class ReceiverSelectionState(
     val captureActive: Boolean = false,
     val recent: List<RecentReceiver> = emptyList(),
     val scan: NetworkScanState = NetworkScanState.Idle,
+    /**
+     * Set when switching to device GNSS could not be saved (the write failed twice): device GNSS is active but the
+     * persisted selection may still name the previous source. Cleared by the next successful save.
+     */
+    val selectionSaveError: String? = null,
 ) {
     /** True while a test or switch is in progress. */
     val busy: Boolean get() = attempt is ConnectionAttempt.Testing || attempt is ConnectionAttempt.Switching
