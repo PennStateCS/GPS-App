@@ -41,8 +41,8 @@
                     android:layout_height="64dp"
                     android:layout_gravity="center"
                     android:src="@drawable/ic_no_thumbnail"
+                    app:tint="?attr/colorOnSurfaceVariant"
                     android:scaleType="center"
-                    android:alpha="0.4"
                     android:contentDescription="No thumbnail available" />
 
                 <ProgressBar
@@ -199,15 +199,6 @@
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="Edit Model"
                     android:padding="6dp" />
-
-<!--                <ImageButton-->
-<!--                    android:id="@+id/btn_recapture_thumbnail"-->
-<!--                    android:layout_width="36dp"-->
-<!--                    android:layout_height="36dp"-->
-<!--                    android:src="@drawable/ic_camera_orange"-->
-<!--                    android:background="?attr/selectableItemBackgroundBorderless"-->
-<!--                    android:contentDescription="Recapture Thumbnail"-->
-<!--                    android:padding="6dp" />-->
 
                 <ImageButton
                     android:id="@+id/btn_delete_model"

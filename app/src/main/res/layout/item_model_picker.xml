@@ -42,8 +42,8 @@
                     android:layout_height="64dp"
                     android:layout_gravity="center"
                     android:src="@drawable/ic_no_thumbnail"
+                    app:tint="?attr/colorOnSurfaceVariant"
                     android:scaleType="center"
-                    android:alpha="0.4"
                     android:contentDescription="No thumbnail available" />
 
             </FrameLayout>

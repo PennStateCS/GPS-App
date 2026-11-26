@@ -254,10 +254,10 @@ items under [Remaining / device-only](#remaining--device-only).
 | `color/nav_ripple_color.xml` | light-only `#1E155DA8` / `#1F41484D` | T | ✅ p2 `?attr/colorPrimary` / `colorOnSurfaceVariant` at 12 % (light unchanged) |
 | `drawable/bg_model_badge.xml` | `#FFFFFFFF` | — | shape only; always tinted (`backgroundTint`) |
 | `drawable/battery_level.xml`, `ic_bolt.xml` | fixed fills, tinted in code | F | ✅ p1 |
-| `drawable/bg_token.xml` | `#33FFFFFF` / `#14FFFFFF` | F (navy strip) | kept |
-| `drawable/side_nav_bar.xml`, `badge_bg.xml`, `bg_rounded_tab.xml`, `thumbnail_border.xml`, `thumbnail_placeholder_bg.xml`, `bg_device_box.xml`, `circle_background.xml`, `panel_handle_grip.xml`, `panel_edge_shadow.xml` | assorted fixed colours | — | **unreferenced** by any layout or Kotlin (checked in p2); left untouched, no visual effect |
+| `bg_token`, `side_nav_bar`, `badge_bg`, `bg_rounded_tab`, `thumbnail_border`, `thumbnail_placeholder_bg`, `bg_device_box`, `circle_background`, `panel_handle_grip`, `panel_edge_shadow`, `coordinate_item_bg`, `ripple_square`, `ic_ar_filter`, `ic_delete_red`, `ic_edit_blue`, `ic_device_status`, `ic_section_arrow`, `ic_visibility_24`, `rs2_client_da7f925e`, `ic_camera_orange` | assorted fixed colours | — | ✅ cleanup: **deleted** (no reference from layouts, menus, styles, manifest, Kotlin, or the by-name marker icon keys) |
+| `ic_no_thumbnail` (model card / picker placeholder) | `#9E9E9E` at 40 % alpha on `colorSurfaceVariant` (≈ 1.3:1 both themes) | T | ✅ cleanup: `app:tint="?attr/colorOnSurfaceVariant"`, full opacity |
+| `ic_grid_24` | root `android:tint="@android:color/white"` | T | ✅ cleanup: `?attr/colorControlNormal` (its one use tints it anyway) |
 | `ic_ar_altitude`, `ic_ar_debug`, `ic_ar_menu` (untinted, white fill) | `#FFFFFF` | F | only used on the dark AR tool card — verified |
-| `ic_camera_orange` | orange | — | only referenced from commented-out XML |
 | `ic_stat_location` | grey fills | — | tinted `?attr/colorOnSurface` at use; notification icon is system-tinted |
 | `ic_launcher_*`, `rs2_client_*` | brand artwork | F | kept |
 
@@ -390,6 +390,13 @@ Fixed colours that stay fixed (all named, all validated where text is involved):
 6. Model thumbnail backdrop (white) in the coordinate toggle list — transparent thumbnails need a light backdrop.
 7. Chart constellation hues — data series; per-theme variants, not theme roles.
 8. Notification LED, launcher / brand artwork.
+9. Drawables with fixed fills that are never drawn as-is or sit on fixed dark backgrounds — enforced by
+   `HardcodedColorGuardTest` (`allowedDrawables`, exact in both directions): icons tinted at every use (viewer
+   controls, readiness icons, zoom / edit / delete / more / chevron, …), white glyphs on the AR chips / GNSS strip,
+   the heading marker, legacy marker icon keys, the notification icon, the model badge shape (always
+   `backgroundTint`-ed) and the status dot. A vector with a root `android:tint="?attr/…"` is theme-controlled and
+   needs no entry. A new fixed colour in any drawable or colour selector fails the test until it is themed or
+   documented here.
 
 ## Remaining / device-only
 
