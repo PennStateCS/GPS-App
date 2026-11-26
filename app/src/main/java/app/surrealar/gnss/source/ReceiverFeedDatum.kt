@@ -24,8 +24,9 @@ import kotlinx.coroutines.flow.StateFlow
  * untouched, so the record lives here, keyed by instance identity.
  *
  * The record is bounded ([capacity] most recent fixes): captures look fixes up as they arrive, far within
- * that window. A fix that is not in the record (evicted, published untransformed after a transform error,
- * or never from this feed) reads as unknown (null) and is never averaged into an external capture.
+ * that window. A fix that is not in the record (evicted, or never from this feed) reads as unknown (null) and
+ * is never averaged into an external capture. A fix whose [normalise] throws is never published at all: the
+ * switchboard drops it and withdraws the live position (fail closed), so no untagged raw fix reaches consumers.
  */
 class ReceiverFeedDatum(
     /** Settings → Coordinates → External receiver datum, as the feed reads it for each fix. */

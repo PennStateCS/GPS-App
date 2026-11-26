@@ -35,7 +35,10 @@ class FixSwitchboard(
     /** No fix for this long ⇒ [currentFix] is cleared (the position is no longer live). */
     private val fixStaleAfterMs: Long = DEFAULT_FIX_STALE_MS,
     private val monotonicNowMs: () -> Long = { System.nanoTime() / 1_000_000L },
-    /** Applied to every fix before it is published (datum normalisation; see geokit-gnss FixDatumNormalizer). */
+    /**
+     * Applied to every fix before it is published (datum normalisation; see geokit-gnss FixDatumNormalizer).
+     * If it throws, the fix is dropped and the live position withdrawn (fail closed; see onTransformFailed).
+     */
     private val fixTransform: (Fix) -> Fix = { it },
 ) : FixBus, SkyBus {
 
@@ -100,7 +103,7 @@ class FixSwitchboard(
 
     /**
      * True while [currentFix] was cleared because the bound provider stopped producing fixes (signal
-     * lost, receiver disconnected, GGA quality 0). Liveness is judged by RECEIVE time on a monotonic
+     * lost, receiver disconnected, GGA quality 0) or its fixes cannot be transformed (fail closed). Liveness is judged by RECEIVE time on a monotonic
      * clock — never by the fix's GNSS timestamp vs. the device clock, which can be skewed.
      */
     private val _fixStale = MutableStateFlow(false)
@@ -114,6 +117,37 @@ class FixSwitchboard(
      * emission into currentFix after the switch. The generation check makes that impossible.
      */
     @Volatile private var bindGeneration = 0
+
+    /** Fixes dropped in a row because [fixTransform] threw (collector coroutine only); reset on success / rebind. */
+    private var consecutiveTransformFailures = 0
+
+    /**
+     * Fail-closed handling of a fix whose [fixTransform] threw (e.g. datum normalisation failed).
+     *
+     * The fix is dropped: it never reaches [fixes] or [currentFix], so the map, AR, mock location and capture
+     * cannot see an un-normalised position presented as normalised (and ReceiverFeedDatum records no datum for
+     * it). The last good position is withdrawn IMMEDIATELY (first failure, not after N): [currentFix] → null,
+     * the replay buffer is cleared and [fixStale] goes true, exactly as when the provider goes silent. Pages
+     * therefore show "waiting for position" (liveness = a valid lat/lon present, which is now absent) instead
+     * of a frozen earlier fix while the receiver keeps sending positions that cannot be used. A failed fix
+     * does not count as "received" for the liveness clock; the next fix that transforms successfully clears
+     * [fixStale] and publishes normally. Logged once in full, then at most once a minute (no coordinates).
+     */
+    private fun onTransformFailed(adapter: SourceAdapter, fix: Fix, e: Exception) {
+        consecutiveTransformFailures++
+        DiagnosticsLogger.every("GNSS", "switchboard.transform", 60_000L, 'E', throwable = e) {
+            "GNSS fix transform failed: fix dropped, no live position published " +
+                "adapter=${adapter::class.simpleName} provider=${fix.provider} droppedInARow=$consecutiveTransformFailures"
+        }
+        if (_currentFix.value != null || !_fixStale.value) {
+            _currentFix.value = null
+            _fixes.resetReplayCache()
+            _fixStale.value = true
+            app.surrealar.gnss.debug.GnssDebugLog.event("switchboard") {
+                "TRANSFORM FAILED: fix dropped from ${adapter::class.simpleName} — currentFix cleared"
+            }
+        }
+    }
 
     /** Wall-clock time of the most recent provider transition (0 = none yet). For diagnostics. */
     @Volatile var lastProviderSwitchAtMs: Long = 0L
@@ -221,6 +255,7 @@ class FixSwitchboard(
         _sky.value = EmptySky
         debugFixesInWindow = 0
         debugWindowStartMs = monotonicNowMs()
+        consecutiveTransformFailures = 0
         app.surrealar.gnss.debug.GnssDebugLog.event("switchboard") {
             "rebind → ${next?.let { it::class.simpleName } ?: "none"} (generation=$generation); current fix and sky cleared"
         }
@@ -239,6 +274,21 @@ class FixSwitchboard(
             next.fixes.conflate().collect { fix ->
                 // Drop emissions from a superseded binding (see bindGeneration).
                 if (generation != bindGeneration) return@collect
+                // Datum normalisation (NAD83(2011) receiver output → WGS84) before anyone sees it.
+                // Fail closed: a fix whose transform throws is never published (see onTransformFailed).
+                val out = try {
+                    fixTransform(fix)
+                } catch (ce: kotlinx.coroutines.CancellationException) {
+                    throw ce
+                } catch (e: Exception) {
+                    onTransformFailed(next, fix, e)
+                    return@collect
+                }
+                if (consecutiveTransformFailures > 0) {
+                    DiagnosticsLogger.i("GNSS", "GNSS fix transform recovered: publishing fixes again " +
+                        "adapter=${next::class.simpleName} droppedFixes=$consecutiveTransformFailures")
+                    consecutiveTransformFailures = 0
+                }
                 val now = monotonicNowMs()
                 if (app.surrealar.gnss.debug.GnssDebugLog.enabled) {
                     debugFixesInWindow++
@@ -255,13 +305,6 @@ class FixSwitchboard(
                 if (_fixStale.value) {
                     _fixStale.value = false
                     DiagnosticsLogger.i("GNSS", "GNSS fixes resumed adapter=${next::class.simpleName}")
-                }
-                // Datum normalisation (NAD83(2011) receiver output → WGS84) before anyone sees it.
-                val out = runCatching { fixTransform(fix) }.getOrElse {
-                    // Would repeat per fix: first error in full, then at most once a minute.
-                    DiagnosticsLogger.every("GNSS", "switchboard.transform", 60_000L, 'E', throwable = it) {
-                        "GNSS fix transform failed: publishing untransformed fix"
-                    }; fix
                 }
                 _currentFix.value = out
                 _fixes.emit(out)

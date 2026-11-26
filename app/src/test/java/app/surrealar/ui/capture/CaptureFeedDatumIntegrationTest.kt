@@ -65,6 +65,8 @@ class CaptureFeedDatumIntegrationTest {
     private val feedDatum = ReceiverFeedDatum(feedDatumFlow)
     private val external = FakeExternal()
     private val repo = FakeCoordinateRepository()
+    /** Stabilization item 2: makes the switchboard's transform (the feed's normalise) throw. */
+    private var transformFails = false
 
     @After fun tearDown() = Dispatchers.resetMain()
 
@@ -100,7 +102,7 @@ class CaptureFeedDatumIntegrationTest {
             scope = sbScope,
             sourceSettings = SourceSettings(providers, MutableStateFlow(emptyList()), MutableStateFlow(null)),
             adapters = mapOf(ProviderChoice.EXTERNAL_TCP to external),
-            fixTransform = feedDatum::normalise,
+            fixTransform = { fix -> if (transformFails) throw IllegalStateException("normalisation failed") else feedDatum.normalise(fix) },
         ).also { it.start() }
     }
 
@@ -174,4 +176,38 @@ class CaptureFeedDatumIntegrationTest {
 
     private fun kotlinx.coroutines.CoroutineScope.launchCollector(sb: FixSwitchboard, into: MutableList<Fix>) =
         launch(Dispatchers.Main) { sb.fixes.collect { into += it } }
+
+    @Test fun failedTransform_rawFixesAreNeverAveragedOrSaved() = runTest {
+        val sb = switchboard()
+        val vm = vm(sb)
+        vm.start(policy(minSamples = 3))
+        runCurrent()
+        transformFails = true
+        repeat(10) { external.raw.emit(raw(lat = 41.5)) }
+        runCurrent()
+        assertNull(sb.currentFix.value)
+        assertTrue("no raw fix may complete an occupation", vm.state.value !is ObservationSession.State.Complete)
+        vm.save("P", null, 0, "ic_pin")
+        assertTrue("an un-normalised fix can never be saved", repo.store.isEmpty())
+    }
+
+    @Test fun failedTransformMidOccupation_onlyNormalisedFixesAreAveraged() = runTest {
+        val sb = switchboard()
+        val vm = vm(sb)
+        vm.start(policy(minSamples = 3))
+        runCurrent()
+        external.raw.emit(raw()); runCurrent()
+        transformFails = true
+        repeat(5) { external.raw.emit(raw(lat = 41.5)) }   // dropped by the switchboard
+        runCurrent()
+        transformFails = false
+        repeat(2) { external.raw.emit(raw()) }
+        runCurrent()
+
+        val done = vm.state.value as ObservationSession.State.Complete
+        assertEquals(3, done.result.samples)
+        vm.save("P", null, 0, "ic_pin")
+        val c = repo.store.single()
+        assertEquals(raw().latDeg, c.latitude, 1e-9)   // ITRF2014: identity; the lat 41.5 fixes never counted
+    }
 }
