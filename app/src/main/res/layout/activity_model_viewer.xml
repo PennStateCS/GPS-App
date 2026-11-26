@@ -51,11 +51,14 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
+        <!-- Fixed light grey on purpose: matches the Filament skybox/clear colour (BACKGROUND_GREY in
+             ModelViewerActivity, same in both themes) so the reveal does not flash. Text over it uses the
+             fixed model_viewer_on_canvas colours, not the theme's onSurface. -->
         <View
             android:id="@+id/loading_overlay"
             android:layout_width="0dp"
             android:layout_height="0dp"
-            android:background="#EEEEEE"
+            android:background="@color/model_viewer_canvas"
             app:layout_constraintBottom_toBottomOf="@id/modelSurface"
             app:layout_constraintEnd_toEndOf="@id/modelSurface"
             app:layout_constraintStart_toStartOf="@id/modelSurface"
@@ -66,6 +69,7 @@
             android:id="@+id/progress_loading"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:indeterminateTint="@color/model_viewer_on_canvas_accent"
             android:visibility="visible"
             app:layout_constraintBottom_toBottomOf="@id/modelSurface"
             app:layout_constraintEnd_toEndOf="@id/modelSurface"
@@ -82,7 +86,7 @@
             android:layout_marginEnd="16dp"
             android:gravity="center"
             android:textAppearance="@style/TextAppearance.App.BodyPrimary"
-            android:textColor="?attr/colorOnSurface"
+            android:textColor="@color/model_viewer_on_canvas"
             android:visibility="visible"
             app:layout_constraintEnd_toEndOf="@id/modelSurface"
             app:layout_constraintStart_toStartOf="@id/modelSurface"
@@ -97,7 +101,7 @@
             android:layout_margin="16dp"
             android:gravity="center"
             android:text="@string/failed_load_model"
-            android:textColor="?attr/colorError"
+            android:textColor="@color/model_viewer_on_canvas_error"
             android:textAppearance="@style/TextAppearance.App.BodyPrimary"
             android:visibility="gone"
             app:layout_constraintBottom_toBottomOf="@id/modelSurface"
@@ -161,7 +165,7 @@
             app:backgroundTint="?attr/colorPrimary"
             app:borderWidth="0dp"
             app:srcCompat="@drawable/ic_camera_white"
-            app:tint="@color/white"
+            app:tint="?attr/colorOnPrimary"
             app:maxImageSize="50dp"
             android:layout_margin="30dp"
             app:layout_constraintBottom_toBottomOf="parent"
@@ -175,7 +179,7 @@
             app:backgroundTint="?attr/colorPrimary"
             app:borderWidth="0dp"
             app:srcCompat="@drawable/ic_zoom_in"
-            app:tint="@color/white"
+            app:tint="?attr/colorOnPrimary"
             app:maxImageSize="35dp"
             android:layout_margin="30dp"
             app:layout_constraintBottom_toBottomOf="parent"

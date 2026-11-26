@@ -301,6 +301,7 @@
                         <!-- Always-visible skeleton (values update in place) for a stable height. -->
                         <TextView
                             android:id="@+id/text_field_status_detail_primary"
+                            android:fontFeatureSettings="tnum"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="8dp"
@@ -313,6 +314,7 @@
 
                         <TextView
                             android:id="@+id/text_field_status_receiver"
+                            android:fontFeatureSettings="tnum"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
@@ -587,6 +589,7 @@
 
                             <TextView
                                 android:id="@+id/text_coordinates_count"
+                                android:fontFeatureSettings="tnum"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="0"
@@ -637,6 +640,7 @@
 
                             <TextView
                                 android:id="@+id/text_models_count"
+                                android:fontFeatureSettings="tnum"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="0"

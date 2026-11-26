@@ -387,7 +387,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             })
             row.addView(android.widget.TextView(ctx).apply {
                 text = r.value
-                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+                // Reading style: same 14 sp as before, tabular figures (docs/design-system.md).
+                setTextAppearance(R.style.TextAppearance_App_Reading)
+                fontFeatureSettings = "tnum"
                 setTextColor(com.google.android.material.color.MaterialColors.getColor(this,
                     com.google.android.material.R.attr.colorOnSurface))
                 setPadding(0, 2, 0, 2)

@@ -1,11 +1,11 @@
 package app.surrealar.ui.components
 
 import android.content.Context
-import android.graphics.Color
 import android.util.AttributeSet
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.core.content.ContextCompat
+import androidx.core.widget.TextViewCompat
+import com.google.android.material.color.MaterialColors
 import app.surrealar.R
 import io.github.pennstatecs.geokit.gnss.model.FixSnapshot
 import app.surrealar.gnss.diagnostics.NmeaLogStats
@@ -30,35 +30,35 @@ class FixBadgeView @JvmOverloads constructor(
 
     init {
         orientation = VERTICAL
-        setPadding(16, 8, 16, 8)
-        setBackgroundColor(ContextCompat.getColor(context, android.R.color.background_light))
+        val dp = resources.displayMetrics.density
+        setPadding((12 * dp).toInt(), (8 * dp).toInt(), (12 * dp).toInt(), (8 * dp).toInt())
+        // Theme-aware (was a fixed light background with black / grey text, unreadable in dark mode).
+        setBackgroundColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurfaceContainer))
 
-        // Create TextViews programmatically since we don't have a layout file
-        fixQualityText = TextView(context).apply {
-            textSize = 12f
-            setTextColor(ContextCompat.getColor(context, android.R.color.black))
-        }
-
-        timestampText = TextView(context).apply {
-            textSize = 10f
-            setTextColor(ContextCompat.getColor(context, android.R.color.darker_gray))
-        }
-
-        streamHealthText = TextView(context).apply {
-            textSize = 10f
-            setTextColor(ContextCompat.getColor(context, android.R.color.darker_gray))
-        }
-
-        hdopText = TextView(context).apply {
-            textSize = 10f
-            setTextColor(ContextCompat.getColor(context, android.R.color.darker_gray))
-        }
+        // Primary reading 14 sp, supporting lines 12 sp (were 12 / 10 sp); all tabular figures.
+        fixQualityText = reading(R.style.TextAppearance_App_Reading)
+        timestampText = reading(R.style.TextAppearance_App_Supporting)
+        streamHealthText = reading(R.style.TextAppearance_App_Supporting)
+        hdopText = reading(R.style.TextAppearance_App_Supporting)
 
         addView(fixQualityText)
         addView(timestampText)
         addView(hdopText)
         addView(streamHealthText)
     }
+
+    private fun reading(style: Int) = TextView(context).apply {
+        TextViewCompat.setTextAppearance(this, style)
+        fontFeatureSettings = "tnum"
+    }
+
+    /** Semantic status roles from the theme (docs/design-system.md); [Quality.UNKNOWN] uses the neutral role. */
+    private enum class Quality(val attr: Int) {
+        GOOD(R.attr.colorStatusSuccess), FAIR(R.attr.colorStatusWarning), POOR(R.attr.colorStatusError),
+        UNKNOWN(R.attr.colorStatusNeutral)
+    }
+
+    private fun color(q: Quality): Int = MaterialColors.getColor(this, q.attr)
 
     /**
      * Updates the fix quality indicators based on current GNSS data
@@ -89,7 +89,7 @@ class FixBadgeView @JvmOverloads constructor(
             hdopText.visibility = VISIBLE
         } else {
             hdopText.text = context.getString(R.string.fix_badge_hdop_na)
-            hdopText.setTextColor(Color.GRAY)
+            hdopText.setTextColor(color(Quality.UNKNOWN))
             hdopText.visibility = VISIBLE
         }
     }
@@ -116,10 +116,10 @@ class FixBadgeView @JvmOverloads constructor(
      */
     private fun getSatelliteColor(satsUsed: Int): Int {
         return when {
-            satsUsed >= 8 -> ContextCompat.getColor(context, android.R.color.holo_green_dark)
-            satsUsed >= 4 -> ContextCompat.getColor(context, android.R.color.holo_orange_dark)
-            satsUsed > 0 -> ContextCompat.getColor(context, android.R.color.holo_red_dark)
-            else -> Color.GRAY
+            satsUsed >= 8 -> color(Quality.GOOD)
+            satsUsed >= 4 -> color(Quality.FAIR)
+            satsUsed > 0 -> color(Quality.POOR)
+            else -> color(Quality.UNKNOWN)
         }
     }
 
@@ -128,10 +128,10 @@ class FixBadgeView @JvmOverloads constructor(
      */
     private fun getHdopColor(hdop: Double): Int {
         return when {
-            hdop <= 1.0 -> ContextCompat.getColor(context, android.R.color.holo_green_dark)
-            hdop <= 2.0 -> ContextCompat.getColor(context, android.R.color.holo_orange_dark)
-            hdop <= 5.0 -> ContextCompat.getColor(context, android.R.color.holo_red_dark)
-            else -> Color.GRAY
+            hdop <= 1.0 -> color(Quality.GOOD)
+            hdop <= 2.0 -> color(Quality.FAIR)
+            hdop <= 5.0 -> color(Quality.POOR)
+            else -> color(Quality.UNKNOWN)
         }
     }
 
@@ -140,10 +140,10 @@ class FixBadgeView @JvmOverloads constructor(
      */
     private fun getStreamHealthColor(linesPerSec: Double, errorRate: Double): Int {
         return when {
-            linesPerSec > 5 && errorRate < 1.0 -> ContextCompat.getColor(context, android.R.color.holo_green_dark)
-            linesPerSec > 1 && errorRate < 5.0 -> ContextCompat.getColor(context, android.R.color.holo_orange_dark)
-            linesPerSec > 0 -> ContextCompat.getColor(context, android.R.color.holo_red_dark)
-            else -> Color.GRAY
+            linesPerSec > 5 && errorRate < 1.0 -> color(Quality.GOOD)
+            linesPerSec > 1 && errorRate < 5.0 -> color(Quality.FAIR)
+            linesPerSec > 0 -> color(Quality.POOR)
+            else -> color(Quality.UNKNOWN)
         }
     }
 }
