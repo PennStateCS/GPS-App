@@ -410,13 +410,14 @@ internal class StakeoutController(
             // bearing: in survey use a bearing is the quadrant form (N 42° E).
             txtStakeoutBearing?.text = app.surrealar.util.AzimuthFormat.azimuthText(bearing)
             val tol = settings.toleranceMeters
-            val color = when {
-                distance < tol                         -> 0xFF4CAF50.toInt()
-                distance < tol * STAKEOUT_AMBER_FACTOR -> 0xFFFF9800.toInt()
-                else                                   -> 0xFFF44336.toInt()
+            // Same thresholds; theme-aware semantic colours (the fixed #4CAF50 / #FF9800 were 2.8 / 2.2:1 on
+            // the light card, below even the large-text minimum).
+            val tone = when {
+                distance < tol                         -> app.surrealar.ui.theme.StatusTone.SUCCESS
+                distance < tol * STAKEOUT_AMBER_FACTOR -> app.surrealar.ui.theme.StatusTone.WARNING
+                else                                   -> app.surrealar.ui.theme.StatusTone.ERROR
             }
-            txtStakeoutDistance?.setTextColor(color)
-            txtStakeoutBearing?.setTextColor(color)
+            txtStakeoutDistance?.let { val color = tone.foreground(it); it.setTextColor(color); txtStakeoutBearing?.setTextColor(color) }
 
             // Display-only north/east offsets (true north, local tangent plane) in the chosen units.
             val (dN, dE) = northEastDeltaMeters(currentPos, target)
@@ -462,7 +463,7 @@ internal class StakeoutController(
             tv.text = String.format(
                 Locale.getDefault(), "Accuracy ±%.2f m · Low accuracy — stakeout may be unreliable", acc
             )
-            tv.setTextColor(0xFFF44336.toInt())
+            tv.setTextColor(app.surrealar.ui.theme.StatusTone.ERROR.foreground(tv))
         } else {
             tv.text = String.format(Locale.getDefault(), "Accuracy ±%.2f m", acc)
             tv.setTextColor(stakeoutAccuracyDefaultColor)

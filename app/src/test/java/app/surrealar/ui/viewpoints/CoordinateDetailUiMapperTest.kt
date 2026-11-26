@@ -49,7 +49,7 @@ class CoordinateDetailUiMapperTest {
     fun fixBadge_externalRtkFixed() {
         val b = CoordinateDetailUiMapper.fixBadge(coord(provider = "rs2-tcp", rtkStatus = "FIX"))!!
         assertEquals("FIX", b.text)
-        assertEquals(0xFF2E7D32.toInt(), b.colorArgb)
+        assertEquals(app.surrealar.ui.theme.StatusTone.SUCCESS, b.tone)
         assertEquals("RTK fix solution", b.contentDescription)
     }
 
@@ -94,7 +94,7 @@ class CoordinateDetailUiMapperTest {
     fun accuracyBadge_surveyGradeColorAndText() {
         val b = CoordinateDetailUiMapper.accuracyBadge(coord(horizontalAccuracyM = 0.02), showAccuracyIndicators = true)!!
         assertEquals("H ±0.02 m", b.text)
-        assertEquals(0xFF2E7D32.toInt(), b.colorArgb)
+        assertEquals(app.surrealar.ui.theme.StatusTone.SUCCESS, b.tone)
         assertEquals("Horizontal accuracy plus or minus 0.02 meters, 68 percent confidence", b.contentDescription)
     }
 

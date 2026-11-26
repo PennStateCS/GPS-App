@@ -31,6 +31,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="1dp"
             android:textAppearance="?attr/textAppearanceTitleMedium"
+            android:fontFeatureSettings="tnum"
             android:textColor="?attr/colorOnSurface" />
 
     </LinearLayout>

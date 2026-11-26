@@ -27,9 +27,8 @@
             android:id="@+id/check_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
             android:textColor="?attr/colorOnSurface"
-            android:textSize="16sp"
-            android:textStyle="bold"
             tools:text="Placement" />
 
         <TextView
@@ -37,8 +36,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:textColor="?attr/colorOnSurface"
-            android:textSize="15sp"
+            android:textAppearance="@style/TextAppearance.App.Body"
             tools:text="At Point 5 the model's centre sits on the point, so half of it is underground." />
 
         <LinearLayout
@@ -54,8 +52,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                android:textSize="14sp"
+                android:textAppearance="@style/TextAppearance.App.Secondary"
                 tools:text="Use Bottom Center so it stands on the ground." />
 
             <Button

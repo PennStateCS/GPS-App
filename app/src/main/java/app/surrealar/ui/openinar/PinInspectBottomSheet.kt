@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import app.surrealar.ui.theme.StatusTone
 import androidx.core.view.isVisible
 import androidx.fragment.app.FragmentManager
 import app.surrealar.R
@@ -116,14 +117,17 @@ class PinInspectBottomSheet : BottomSheetDialogFragment() {
         val rtkView = view.findViewById<TextView>(R.id.pinRtk)
         if (rtk != null) {
             rtkView.text = "RTK:  $rtk"
+            // Same semantic roles as the toolbar / coordinate badges (FLOAT used to be blue and DGPS
+            // orange here, the opposite of everywhere else; the fixed hues were 2.3–3.1:1 on white).
             rtkView.setTextColor(
                 when (rtk.uppercase()) {
-                    "FIX"    -> 0xFF4CAF50.toInt()
-                    "FLOAT"  -> 0xFF2196F3.toInt()
-                    "DGPS"   -> 0xFFFF9800.toInt()
-                    "SINGLE" -> 0xFFFF5722.toInt()
-                    else     -> 0xFF9E9E9E.toInt()
-                }
+                    "FIX", "FIXED" -> StatusTone.SUCCESS
+                    "FLOAT"        -> StatusTone.WARNING
+                    "DGPS"         -> StatusTone.INFO
+                    "SINGLE"       -> StatusTone.NEUTRAL
+                    "NO FIX", "NOFIX", "NONE" -> StatusTone.ERROR
+                    else           -> StatusTone.NEUTRAL
+                }.foreground(rtkView)
             )
             rtkView.isVisible = true
         }

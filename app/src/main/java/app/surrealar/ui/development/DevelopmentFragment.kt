@@ -1,6 +1,7 @@
 package app.surrealar.ui.development
 
 import android.content.Context
+import app.surrealar.ui.theme.StatusTone
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.Button
@@ -229,13 +230,13 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                 createPermissionsTableLayout(perms, pm, pkg)
             } else TextView(ctx).apply {
                 setText(R.string.dev_perm_none)
-                textSize = 14f
+                setTextAppearance(R.style.TextAppearance_App_Secondary)
                 setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
             }
         } catch (e: Exception) {
             TextView(ctx).apply {
                 text = "${getString(R.string.dev_perm_error)}: ${e.message ?: ""}"
-                textSize = 14f
+                setTextAppearance(R.style.TextAppearance_App_Secondary)
                 setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
             }
         }
@@ -251,7 +252,8 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         // Summary header inside card before rows
         val summaryView = TextView(ctx).apply {
             text = "${getString(R.string.dev_perm_total)}: ${permissions.size}"
-            textSize = 12f
+            setTextAppearance(R.style.TextAppearance_App_Supporting)
+            fontFeatureSettings = "tnum"
             setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
             setPadding(dp(20f), 0, dp(20f), dp(8f))
         }
@@ -274,22 +276,21 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             }
             val nameView = TextView(ctx).apply {
                 text = shortName
-                textSize = 13f
-                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelLarge)
                 setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurface))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
             val statusView = TextView(ctx).apply {
                 text = if (granted) "GRANTED" else "DENIED"
-                textSize = 11f
-                setTypeface(null, android.graphics.Typeface.BOLD)
-                setTextColor(if (granted) 0xFF2E7D32.toInt() else 0xFFC62828.toInt())
+                setTextAppearance(R.style.TextAppearance_App_StatusLabel)
+                // Word + semantic colour (old fixed green/red ignored dark mode: red was 3.2:1 on the dark card).
+                setTextColor((if (granted) StatusTone.SUCCESS else StatusTone.ERROR).foreground(ctx))
             }
             topRow.addView(nameView)
             topRow.addView(statusView)
             val pathView = TextView(ctx).apply {
                 text = perm
-                textSize = 11f
+                setTextAppearance(R.style.TextAppearance_App_Supporting)
                 setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
                 setTextIsSelectable(true)
                 maxLines = 2
@@ -651,9 +652,10 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         var runtimeStatus = MapsStatus.WARN
         var runtimeValueHolder: TextView? = null
         fun statusColor(status: MapsStatus?) = when (status) {
-            MapsStatus.OK   -> 0xFF2E7D32.toInt()
-            MapsStatus.WARN -> 0xFFF9A825.toInt()
-            MapsStatus.ERROR -> 0xFFC62828.toInt()
+            // Semantic roles (the old amber #F9A825 was 1.9:1 on white).
+            MapsStatus.OK   -> StatusTone.SUCCESS.foreground(ctx)
+            MapsStatus.WARN -> StatusTone.WARNING.foreground(ctx)
+            MapsStatus.ERROR -> StatusTone.ERROR.foreground(ctx)
             null -> resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant)
         }
         // Flush rows into the card (gathered rows + the runtime test row), capturing the runtime TextView.
@@ -858,16 +860,17 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val (skyCard, skyCardRows) = buildInfoCard(ctx, "Satellite Sky")
         val skyTotalView = TextView(ctx).apply {
             text = "--"
-            textSize = 13f
+            setTextAppearance(R.style.TextAppearance_App_ReadingCompact)
+            fontFeatureSettings = "tnum"
             setTextIsSelectable(true)
             setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
             setPadding(dp(20f), dp(8f), dp(20f), dp(4f))
         }
         val skyConstellationView = TextView(ctx).apply {
             text = "(no GSV data yet)"
-            textSize = 12f
+            // Fixed-width per-constellation table: monospace is intentional here.
+            setTextAppearance(R.style.TextAppearance_App_Mono)
             setTextIsSelectable(true)
-            typeface = android.graphics.Typeface.MONOSPACE
             setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
             setPadding(dp(20f), dp(4f), dp(20f), dp(12f))
         }
@@ -919,8 +922,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val charts = constellations.map { (c, label) ->
             val subLabel = TextView(ctx).apply {
                 text = label
-                textSize = 12f
-                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextAppearance(R.style.TextAppearance_App_DataLabel)
                 setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
                 setPadding(dp(20f), dp(12f), dp(20f), dp(2f))
             }
@@ -961,8 +963,8 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val (historyCard, historyCardRows) = buildInfoCard(ctx, "NMEA History (last 5)")
         val historyText = TextView(ctx).apply {
             text = "(no NMEA data yet)"
-            textSize = 11f
-            typeface = android.graphics.Typeface.MONOSPACE
+            // Raw NMEA: monospace (13 sp; was 11 sp).
+            setTextAppearance(R.style.TextAppearance_App_Mono)
             isFocusable = false
             isFocusableInTouchMode = false
             setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
@@ -1016,14 +1018,15 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             // Source & Status
             sourceSection.values["RTK Fix Status"]?.apply {
                 text = fix.rtkStatus.name
+                // Same semantic roles as the rest of the app (the text names the status too).
                 setTextColor(when (fix.rtkStatus) {
-                    RtkStatus.FIX            -> 0xFF2E7D32.toInt()
-                    RtkStatus.FLOAT          -> 0xFFF9A825.toInt()
-                    RtkStatus.DGPS           -> 0xFF1565C0.toInt()
-                    RtkStatus.SINGLE         -> 0xFFFF5722.toInt()
-                    RtkStatus.DEAD_RECKONING -> 0xFF9E9E9E.toInt()
-                    else                     -> 0xFFC62828.toInt()
-                })
+                    RtkStatus.FIX            -> StatusTone.SUCCESS
+                    RtkStatus.FLOAT          -> StatusTone.WARNING
+                    RtkStatus.DGPS           -> StatusTone.INFO
+                    RtkStatus.SINGLE         -> StatusTone.NEUTRAL
+                    RtkStatus.DEAD_RECKONING -> StatusTone.NEUTRAL
+                    else                     -> StatusTone.ERROR
+                }.foreground(ctx))
             }
             sourceSection.values["UTC Timestamp"]?.text = utcFmt.format(Date(fix.timeUtc.toEpochMilli()))
             sourceSection.values["Timestamp Source"]?.text = fix.timestampSource.name.replace('_', ' ')
@@ -1202,7 +1205,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
     private fun resolveAttrColor(ctx: Context, attr: Int): Int {
         val tv = TypedValue()
         return if (ctx.theme.resolveAttribute(attr, tv, true)) tv.data
-        else 0xFF808080.toInt()
+        else android.graphics.Color.GRAY
     }
 
     /**
@@ -1219,8 +1222,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         }
         val header = TextView(ctx).apply {
             text = sectionTitle
-            textSize = 14f
-            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextAppearance(R.style.TextAppearance_App_CardSectionLabel)
             setTextColor(resolveAttrColor(ctx, androidx.appcompat.R.attr.colorPrimary))
             setPadding(dp(20f), dp(16f), dp(20f), dp(8f))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -1261,14 +1263,15 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         }
         val labelView = TextView(ctx).apply {
             text = label
-            textSize = 13f
-            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelLarge)
             setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurface))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
         }
         val valueView = TextView(ctx).apply {
             text = value
-            textSize = 13f
+            // Live readings: tabular figures so digits don't jitter as values change.
+            setTextAppearance(R.style.TextAppearance_App_Reading)
+            fontFeatureSettings = "tnum"
             setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3f)
             setTextIsSelectable(true)

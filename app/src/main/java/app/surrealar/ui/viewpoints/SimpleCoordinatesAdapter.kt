@@ -17,7 +17,6 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 import androidx.core.graphics.scale
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
@@ -136,7 +135,7 @@ class SimpleCoordinatesAdapter(
                 accent.id = R.id.selection_accent
                 val widthPx = (parent.resources.displayMetrics.density * 4).toInt().coerceAtLeast(2)
                 accent.layoutParams = ViewGroup.LayoutParams(widthPx, ViewGroup.LayoutParams.MATCH_PARENT)
-                accent.setBackgroundColor(ContextCompat.getColor(parent.context, R.color.dev_category_selected_accent))
+                accent.setBackgroundColor(MaterialColors.getColor(parent, androidx.appcompat.R.attr.colorPrimary))
                 // Insert at start
                 container.addView(accent, 0)
             }
@@ -177,7 +176,7 @@ class SimpleCoordinatesAdapter(
             linkedModelId != null -> {
                 // DB model icon — load thumbnail from disk if available
                 val thumbPath = thumbnailMap[linkedModelId]
-                val bmp = loadThumbnailCached(thumbPath) ?: makePlaceholderBitmap(p.name)
+                val bmp = loadThumbnailCached(thumbPath) ?: makePlaceholderBitmap(holder.itemView, p.name)
                 holder.icon.clearColorFilter()
                 holder.icon.setImageBitmap(bmp)
             }
@@ -321,18 +320,19 @@ class SimpleCoordinatesAdapter(
         else scale(ICON_SIZE_PX, ICON_SIZE_PX, filter = true)
 
     /**
-     * Generates a grey square with the first letter of [label].
+     * Generates a tile with the first letter of [label] in theme colours (surfaceContainerHighest +
+     * onSurfaceVariant; the old #BDBDBD tile with white text was 1.8:1).
      * The result is *not* inserted into the LRU cache because placeholder bitmaps are
      * cheap and coordinate names are not shared across rows.
      */
-    private fun makePlaceholderBitmap(label: String): Bitmap {
+    private fun makePlaceholderBitmap(view: View, label: String): Bitmap {
         val size = ICON_SIZE_PX
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        paint.color = Color.parseColor("#BDBDBD")
+        paint.color = MaterialColors.getColor(view, com.google.android.material.R.attr.colorSurfaceContainerHighest)
         canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
-        paint.color = Color.WHITE
+        paint.color = MaterialColors.getColor(view, com.google.android.material.R.attr.colorOnSurfaceVariant)
         paint.textSize = size * 0.5f
         paint.textAlign = Paint.Align.CENTER
         val initial = label.firstOrNull()?.uppercaseChar()?.toString() ?: "?"

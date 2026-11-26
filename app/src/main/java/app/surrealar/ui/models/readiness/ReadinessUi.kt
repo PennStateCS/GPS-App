@@ -5,6 +5,7 @@ import androidx.annotation.ColorRes
 import androidx.annotation.DrawableRes
 import app.surrealar.R
 import app.surrealar.ui.models.ModelDiagnostics
+import app.surrealar.ui.theme.StatusTone
 
 /** What the readiness checklist dialog shows; published by the model viewer. */
 data class ReadinessUiState(
@@ -41,11 +42,11 @@ object ReadinessStyle {
         Verdict.NOT_READY -> "Not ready"
     }
 
-    @ColorRes
-    fun verdictColor(v: Verdict): Int = when (v) {
-        Verdict.READY -> R.color.app_success
-        Verdict.READY_WITH_WARNINGS -> R.color.app_warning
-        Verdict.NOT_READY -> R.color.app_error
+    /** Semantic role of a verdict: filled chips use its container / on-container colours (theme-aware). */
+    fun verdictTone(v: Verdict): StatusTone = when (v) {
+        Verdict.READY -> StatusTone.SUCCESS
+        Verdict.READY_WITH_WARNINGS -> StatusTone.WARNING
+        Verdict.NOT_READY -> StatusTone.ERROR
     }
 
     @ColorRes

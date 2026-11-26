@@ -495,7 +495,7 @@ internal class CoordinatesSettingsController(
             setPadding(0, (topDp * resources.displayMetrics.density).toInt(), 0, 0)
         }
         val betaColor = com.google.android.material.color.MaterialColors.getColor(
-            ctx, com.google.android.material.R.attr.colorTertiary, 0xFF7D5260.toInt())
+            ctx, com.google.android.material.R.attr.colorTertiary, "colorTertiary")
         for ((group, items) in groups) {
             container.addView(text(com.google.android.material.R.attr.textAppearanceTitleSmall, group.title, topDp = 8))
             container.addView(text(com.google.android.material.R.attr.textAppearanceBodySmall, group.subtitle).apply { alpha = 0.7f })

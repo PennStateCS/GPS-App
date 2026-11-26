@@ -3,6 +3,7 @@ package app.surrealar.ui.settings
 import app.surrealar.domain.model.SelfTest
 import app.surrealar.domain.model.TestStatus
 import org.junit.Assert.assertEquals
+import app.surrealar.ui.theme.StatusTone
 import org.junit.Test
 
 class SelfTestDisplayTest {
@@ -18,11 +19,11 @@ class SelfTestDisplayTest {
     }
 
     @Test
-    fun statusColorRes_mapsEachStatus() {
-        assertEquals(android.R.color.holo_green_dark, SelfTestDisplay.statusColorRes(TestStatus.PASSED))
-        assertEquals(android.R.color.holo_red_dark, SelfTestDisplay.statusColorRes(TestStatus.FAILED))
-        assertEquals(android.R.color.holo_orange_dark, SelfTestDisplay.statusColorRes(TestStatus.WARNING))
-        assertEquals(android.R.color.darker_gray, SelfTestDisplay.statusColorRes(TestStatus.UNKNOWN))
+    fun statusTone_mapsEachStatus() {
+        assertEquals(StatusTone.SUCCESS, SelfTestDisplay.statusTone(TestStatus.PASSED))
+        assertEquals(StatusTone.ERROR, SelfTestDisplay.statusTone(TestStatus.FAILED))
+        assertEquals(StatusTone.WARNING, SelfTestDisplay.statusTone(TestStatus.WARNING))
+        assertEquals(StatusTone.NEUTRAL, SelfTestDisplay.statusTone(TestStatus.UNKNOWN))
     }
 
     @Test
@@ -32,20 +33,20 @@ class SelfTestDisplayTest {
     }
 
     @Test
-    fun summaryColorRes_redWhenAnyFailed() {
+    fun summaryTone_errorWhenAnyFailed() {
         val tests = listOf(t(TestStatus.PASSED), t(TestStatus.WARNING), t(TestStatus.FAILED))
-        assertEquals(android.R.color.holo_red_dark, SelfTestDisplay.summaryColorRes(tests))
+        assertEquals(StatusTone.ERROR, SelfTestDisplay.summaryTone(tests))
     }
 
     @Test
-    fun summaryColorRes_amberWhenWarningNoFail() {
+    fun summaryTone_warningWhenWarningNoFail() {
         val tests = listOf(t(TestStatus.PASSED), t(TestStatus.WARNING))
-        assertEquals(android.R.color.holo_orange_dark, SelfTestDisplay.summaryColorRes(tests))
+        assertEquals(StatusTone.WARNING, SelfTestDisplay.summaryTone(tests))
     }
 
     @Test
-    fun summaryColorRes_greenWhenAllPassed() {
+    fun summaryTone_successWhenAllPassed() {
         val tests = listOf(t(TestStatus.PASSED), t(TestStatus.PASSED))
-        assertEquals(android.R.color.holo_green_dark, SelfTestDisplay.summaryColorRes(tests))
+        assertEquals(StatusTone.SUCCESS, SelfTestDisplay.summaryTone(tests))
     }
 }

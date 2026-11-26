@@ -3,7 +3,6 @@ package app.surrealar.ui.models
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Color
 import android.graphics.PorterDuff
 import android.view.LayoutInflater
 import android.view.View
@@ -16,7 +15,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import app.surrealar.R
-import androidx.core.content.ContextCompat
+import com.google.android.material.color.MaterialColors
 import app.surrealar.domain.model.Model
 import app.surrealar.ui.models.readiness.ReadinessStyle
 import app.surrealar.ui.models.readiness.Verdict
@@ -138,12 +137,11 @@ class ModelsAdapter(
             showProblemBadge(if (!model.isValid) "Invalid" else null)
 
             // Apply solid icon colours via SRC_IN so the tint fully replaces
-            // the drawable's own colour rather than blending on top of it.
-            btnEditModel.imageTintList = ColorStateList.valueOf(Color.parseColor("#0D47A1"))
+            // the drawable's own colour rather than blending on top of it. Theme colours: the old
+            // fixed dark blue / dark red were near-invisible on the dark-theme card.
+            btnEditModel.imageTintList = ColorStateList.valueOf(MaterialColors.getColor(btnEditModel, androidx.appcompat.R.attr.colorPrimary))
             btnEditModel.imageTintMode = PorterDuff.Mode.SRC_IN
-            //btnRecaptureThumbnail.imageTintList = ColorStateList.valueOf(Color.parseColor("#E65100"))
-            //btnRecaptureThumbnail.imageTintMode = PorterDuff.Mode.SRC_IN
-            btnDeleteModel.imageTintList = ColorStateList.valueOf(Color.parseColor("#B71C1C"))
+            btnDeleteModel.imageTintList = ColorStateList.valueOf(MaterialColors.getColor(btnDeleteModel, androidx.appcompat.R.attr.colorError))
             btnDeleteModel.imageTintMode = PorterDuff.Mode.SRC_IN
 
             btnEditModel.setOnClickListener { onEditClick(model) }
@@ -183,10 +181,11 @@ class ModelsAdapter(
                 badgeReadiness.setOnClickListener(null)
                 return
             }
-            val ctx = itemView.context
             badgeReadiness.text = ReadinessStyle.verdictChip(verdict)
-            badgeReadiness.backgroundTintList =
-                ColorStateList.valueOf(ContextCompat.getColor(ctx, ReadinessStyle.verdictColor(verdict)))
+            // Filled chip: semantic container + on-container (white on the status colour failed in dark mode).
+            val tone = ReadinessStyle.verdictTone(verdict)
+            badgeReadiness.backgroundTintList = ColorStateList.valueOf(tone.container(badgeReadiness))
+            badgeReadiness.setTextColor(tone.onContainer(badgeReadiness))
             badgeReadiness.contentDescription = "AR readiness: ${ReadinessStyle.verdictTitle(verdict)}. Tap for the checklist."
             badgeReadiness.setOnClickListener { onReadinessClick(model) }
             badgeReadiness.visibility = View.VISIBLE

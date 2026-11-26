@@ -1220,7 +1220,9 @@ class CoordinateDetailFragment : Fragment() {
         chip ?: return
         if (state == null) { chip.visibility = View.GONE; return }
         chip.text = state.text
-        chip.chipBackgroundColor = android.content.res.ColorStateList.valueOf(state.colorArgb)
+        // Theme-aware semantic container + on-container colours (≥ 4.5:1 in light and dark).
+        chip.chipBackgroundColor = android.content.res.ColorStateList.valueOf(state.tone.container(chip))
+        chip.setTextColor(state.tone.onContainer(chip))
         // Only the fix/accuracy badges carry an accessibility description; leave the others' as-is
         // (matches the previous per-badge behavior — source/extra never set contentDescription).
         state.contentDescription?.let { chip.contentDescription = it }

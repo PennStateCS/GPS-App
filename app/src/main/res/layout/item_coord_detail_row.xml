@@ -18,15 +18,14 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:textAppearance="?attr/textAppearanceLabelMedium"
-        android:textColor="?attr/colorOnSurface" />
+        android:textAppearance="@style/TextAppearance.App.DataLabel" />
 
     <TextView
         android:id="@+id/row_value"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1.5"
-        android:textAppearance="?attr/textAppearanceBodyMedium"
-        android:textColor="?attr/colorOnSurfaceVariant" />
+        android:textAppearance="@style/TextAppearance.App.Reading"
+        android:fontFeatureSettings="tnum" />
 
 </LinearLayout>

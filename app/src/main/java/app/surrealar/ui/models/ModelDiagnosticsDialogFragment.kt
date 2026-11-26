@@ -78,9 +78,10 @@ class ModelDiagnosticsDialogFragment : DialogFragment() {
             summary.visibility = View.GONE
         } else {
             verdict.text = ReadinessStyle.verdictTitle(report.verdict)
-            verdict.backgroundTintList =
-                ColorStateList.valueOf(ContextCompat.getColor(ctx, ReadinessStyle.verdictColor(report.verdict)))
-            verdict.setTextColor(ContextCompat.getColor(ctx, android.R.color.white))
+            // Filled chip: semantic container + on-container (white on the status colour failed in dark mode).
+            val tone = ReadinessStyle.verdictTone(report.verdict)
+            verdict.backgroundTintList = ColorStateList.valueOf(tone.container(verdict))
+            verdict.setTextColor(tone.onContainer(verdict))
             summary.text = report.summary
             summary.visibility = if (report.summary.isBlank()) View.GONE else View.VISIBLE
         }

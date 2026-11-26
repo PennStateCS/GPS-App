@@ -18,15 +18,14 @@
         android:id="@+id/cell_label"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textAppearance="?attr/textAppearanceLabelMedium"
-        android:textColor="?attr/colorOnSurface" />
+        android:textAppearance="@style/TextAppearance.App.DataLabel" />
 
     <TextView
         android:id="@+id/cell_value"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="1dp"
-        android:textAppearance="?attr/textAppearanceBodyMedium"
-        android:textColor="?attr/colorOnSurfaceVariant" />
+        android:textAppearance="@style/TextAppearance.App.Reading"
+        android:fontFeatureSettings="tnum" />
 
 </LinearLayout>

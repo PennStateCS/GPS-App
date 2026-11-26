@@ -75,9 +75,13 @@ class ModelsFragment : Fragment() {
     }
 
     private fun setupSwipeRefresh() {
-        binding.swipeRefreshModels.setColorSchemeResources(
-            android.R.color.holo_purple,
-            android.R.color.holo_blue_dark
+        // Theme colours for the refresh spinner (holo purple / dark blue ignored dark mode).
+        binding.swipeRefreshModels.setColorSchemeColors(
+            com.google.android.material.color.MaterialColors.getColor(binding.swipeRefreshModels, androidx.appcompat.R.attr.colorPrimary),
+            com.google.android.material.color.MaterialColors.getColor(binding.swipeRefreshModels, com.google.android.material.R.attr.colorSecondary)
+        )
+        binding.swipeRefreshModels.setProgressBackgroundColorSchemeColor(
+            com.google.android.material.color.MaterialColors.getColor(binding.swipeRefreshModels, com.google.android.material.R.attr.colorSurfaceContainerHigh)
         )
         binding.swipeRefreshModels.setOnRefreshListener {
             // Force every visible card to rebind so thumbnails are reloaded from disk

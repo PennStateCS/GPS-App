@@ -26,7 +26,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textAppearance="?attr/textAppearanceTitleLarge"
-            android:textStyle="bold"
             android:textColor="?attr/colorOnSurface"
             android:paddingBottom="4dp" />
 
@@ -51,8 +50,8 @@
             android:id="@+id/pinLatLon"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:fontFamily="monospace"
-            android:textAppearance="@style/TextAppearance.App.BodySecondary"
+            android:textAppearance="@style/TextAppearance.App.Reading"
+            android:fontFeatureSettings="tnum"
             android:paddingBottom="6dp" />
 
         <!-- Altitude -->
@@ -60,7 +59,8 @@
             android:id="@+id/pinAlt"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textAppearance="@style/TextAppearance.App.BodySecondary"
+            android:textAppearance="@style/TextAppearance.App.Reading"
+            android:fontFeatureSettings="tnum"
             android:paddingBottom="6dp" />
 
         <!-- Horizontal accuracy -->
@@ -68,7 +68,8 @@
             android:id="@+id/pinAccuracy"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textAppearance="@style/TextAppearance.App.BodySecondary"
+            android:textAppearance="@style/TextAppearance.App.Reading"
+            android:fontFeatureSettings="tnum"
             android:paddingBottom="6dp" />
 
         <!-- RTK status (hidden when null) -->
