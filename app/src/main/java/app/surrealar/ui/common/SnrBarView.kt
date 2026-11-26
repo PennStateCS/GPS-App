@@ -2,11 +2,12 @@ package app.surrealar.ui.common
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.View
+import androidx.core.content.ContextCompat
+import app.surrealar.R
 import kotlin.math.max
 
 /**
@@ -84,11 +85,9 @@ class SnrBarView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // Theme-aware colors for light/dark
-        val night = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
-        axisPaint.color = if (night) Color.parseColor("#80FFFFFF") else Color.parseColor("#80000000")
-        textPaint.color = if (night) Color.parseColor("#DDFFFFFF") else Color.parseColor("#DD000000")
+        // Theme-aware chart roles (values / values-night chart_*).
+        axisPaint.color = colorAxis
+        textPaint.color = colorText
 
         val padL = paddingLeft + dp(leftPaddingDp)
         val padT = paddingTop + dp(topPaddingDp)
@@ -143,17 +142,18 @@ class SnrBarView @JvmOverloads constructor(
             val barH = ratio * usableHeight
             val top = chartBottom - barH
 
-            barPaint.color = if (!used) COLOR_GRAY_UNUSED else colorForSnr(snr)
+            barPaint.color = if (!used) colorUnused else colorForSnr(snr)
             canvas.drawRect(x, top, x + barW, chartBottom, barPaint)
             x += barW + spacing
         }
     }
 
-    // Color mapping (used satellites only). Not-used bars are drawn with COLOR_GRAY_UNUSED.
+    // Color mapping (used satellites only). Not-used bars are drawn with colorUnused.
+    // Same SNR series as SatelliteSignalChartView (the old fixed amber was 1.6:1 on a light card).
     private fun colorForSnr(snr: Int): Int = when {
-        snr < 30  -> COLOR_RED_WEAK
-        snr < 35  -> COLOR_AMBER_MED
-        else      -> COLOR_GREEN_STRONG
+        snr < 30  -> colorWeak      // <30 dB-Hz
+        snr < 35  -> colorMedium    // 30–34
+        else      -> colorStrong    // ≥35
     }
 
     private fun dp(v: Float): Float =
@@ -161,10 +161,11 @@ class SnrBarView @JvmOverloads constructor(
     private fun sp(v: Float): Float =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, v, resources.displayMetrics)
 
-    companion object {
-        private const val COLOR_GREEN_STRONG = 0xFF4CAF50.toInt() // ≥35 dB-Hz
-        private const val COLOR_AMBER_MED    = 0xFFFFC107.toInt() // 30–34
-        private const val COLOR_RED_WEAK     = 0xFFF44336.toInt() // <30
-        private const val COLOR_GRAY_UNUSED  = 0xFF9E9E9E.toInt() // not used in fix
-    }
+    private fun chartColor(id: Int): Int = ContextCompat.getColor(context, id)
+    private val colorAxis = chartColor(R.color.chart_axis)
+    private val colorText = chartColor(R.color.chart_text)
+    private val colorStrong = chartColor(R.color.chart_bar_strong)
+    private val colorMedium = chartColor(R.color.chart_bar_medium)
+    private val colorWeak = chartColor(R.color.chart_bar_weak)
+    private val colorUnused = chartColor(R.color.chart_bar_unused)
 }

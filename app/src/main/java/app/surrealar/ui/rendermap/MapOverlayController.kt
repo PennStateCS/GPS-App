@@ -318,7 +318,7 @@ internal class MapOverlayController(
         return try {
             val density = requireContext().resources.displayMetrics.density
             val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = android.graphics.Color.WHITE
+                color = androidx.core.content.ContextCompat.getColor(requireContext(), app.surrealar.R.color.map_label_text)
                 textSize = 12f * density
                 typeface = android.graphics.Typeface.DEFAULT_BOLD
                 textAlign = Paint.Align.CENTER
@@ -331,7 +331,9 @@ internal class MapOverlayController(
             val height = (lineH * lines.size + pad * 2).toInt().coerceAtLeast(1)
             val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bmp)
-            val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xB3000000.toInt() }
+            val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = androidx.core.content.ContextCompat.getColor(requireContext(), app.surrealar.R.color.map_label_bg)
+            }
             canvas.drawRoundRect(RectF(0f, 0f, width.toFloat(), height.toFloat()), 6f * density, 6f * density, bgPaint)
             var y = pad - fm.ascent
             for (line in lines) { canvas.drawText(line, width / 2f, y, textPaint); y += lineH }

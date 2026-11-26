@@ -87,6 +87,15 @@
     <color name="chart_text">#FFE2E4E7</color>
     <color name="chart_title">#FFFFFFFF</color>
     <color name="chart_bar_unused">#FF8B9198</color>
+    <color name="chart_used_halo">#FFFFFFFF</color>
+    <color name="chart_constellation_gps">#90CAF9</color>
+    <color name="chart_constellation_glonass">#CE93D8</color>
+    <color name="chart_constellation_galileo">#A5D6A7</color>
+    <color name="chart_constellation_beidou">#FFE082</color>
+    <color name="chart_constellation_qzss">#B39DDB</color>
+    <color name="chart_constellation_sbas">#B0BEC5</color>
+    <color name="chart_constellation_irnss">#FFAB91</color>
+    <color name="chart_constellation_other">#C0C0C0</color>
 
     <!-- Stat card backgrounds (bg_rounded_card / bg_rounded_light) – night -->
     <color name="stat_card_bg">@color/md_surface_container_high</color>

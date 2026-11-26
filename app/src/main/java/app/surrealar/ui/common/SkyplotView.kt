@@ -2,7 +2,6 @@ package app.surrealar.ui.common
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.os.SystemClock
@@ -11,7 +10,8 @@ import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
-import androidx.core.graphics.toColorInt
+import androidx.core.content.ContextCompat
+import app.surrealar.R
 import io.github.pennstatecs.geokit.gnss.model.SkyGeometry
 import io.github.pennstatecs.geokit.gnss.model.Constellation
 import kotlin.math.hypot
@@ -109,19 +109,22 @@ class SkyplotView @JvmOverloads constructor(
     private val trails: MutableMap<Int, ArrayDeque<TrailSample>> = mutableMapOf()
 
     // ==== Paints ====
+    // Theme-aware chart roles (values / values-night chart_*), see docs/design-system.md "Charts".
+    private fun chartColor(id: Int): Int = ContextCompat.getColor(context, id)
+
     private val axisPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = "#80FFFFFF".toColorInt() // 50% white
+        color = chartColor(R.color.chart_axis)
         strokeWidth = dp(1f)
         style = Paint.Style.STROKE
     }
     private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = "#33FFFFFF".toColorInt() // 20% white
+        color = chartColor(R.color.chart_grid)
         strokeWidth = dp(1f)
         style = Paint.Style.STROKE
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = "#DDFFFFFF".toColorInt()
-        textSize = sp(11f)
+        color = chartColor(R.color.chart_text)
+        textSize = sp(12f)   // was 11 sp; 12 sp minimum
         textAlign = Paint.Align.CENTER
     }
     private val satFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -134,7 +137,7 @@ class SkyplotView @JvmOverloads constructor(
     private val usedHalo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = dp(3f)
-        color = Color.WHITE
+        color = chartColor(R.color.chart_used_halo)   // was white in both themes (invisible on a light card)
         alpha = 190
     }
     private val trailPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -145,10 +148,11 @@ class SkyplotView @JvmOverloads constructor(
     }
 
     // ==== Colors (SNR) ====
-    private val colorGreen = "#4CAF50".toColorInt()
-    private val colorYellow = "#FFC107".toColorInt()
-    private val colorRed = "#F44336".toColorInt()
-    private val colorGray = "#9E9E9E".toColorInt()
+    // Same SNR series as the signal chart; the fixed amber #FFC107 was 1.6:1 on a light card.
+    private val colorGreen = chartColor(R.color.chart_bar_strong)
+    private val colorYellow = chartColor(R.color.chart_bar_medium)
+    private val colorRed = chartColor(R.color.chart_bar_weak)
+    private val colorGray = chartColor(R.color.chart_bar_unused)
 
     // ==== Touch state ====
     private data class HitDot(
@@ -175,19 +179,6 @@ class SkyplotView @JvmOverloads constructor(
     // ==== Draw ====
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-
-        // Theme-aware colors for light/dark
-        val isNight = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
-        if (isNight) {
-            axisPaint.color = "#80FFFFFF".toColorInt()
-            gridPaint.color = "#33FFFFFF".toColorInt()
-            textPaint.color = "#DDFFFFFF".toColorInt()
-        } else {
-            axisPaint.color = "#80000000".toColorInt()
-            gridPaint.color = "#33000000".toColorInt()
-            textPaint.color = "#DD000000".toColorInt()
-        }
 
         val padding = dp(18f)
         val plotTop = padding
@@ -567,16 +558,20 @@ class SkyplotView @JvmOverloads constructor(
     private fun uniqueKey(s: SkyGeometry): Int =
         s.constellation.ordinal * 1000 + s.svid
 
-    private fun constellationStrokeColor(c: Constellation): Int = when (c) {
-        Constellation.GPS     -> Color.parseColor("#90CAF9") // light blue
-        Constellation.GLONASS -> Color.parseColor("#CE93D8") // violet
-        Constellation.GALILEO -> Color.parseColor("#A5D6A7") // green
-        Constellation.BEIDOU  -> Color.parseColor("#FFE082") // amber
-        Constellation.QZSS    -> Color.parseColor("#B39DDB")
-        Constellation.SBAS    -> Color.parseColor("#B0BEC5")
-        Constellation.IRNSS   -> Color.parseColor("#FFAB91") // orange
-        else -> Color.LTGRAY
-    }
+    // Constellation hues stay distinct (blue / violet / green / amber / purple / grey / orange); darker
+    // variants in the light theme so the stroke reads on a white card.
+    private val constellationColors = mapOf(
+        Constellation.GPS to chartColor(R.color.chart_constellation_gps),
+        Constellation.GLONASS to chartColor(R.color.chart_constellation_glonass),
+        Constellation.GALILEO to chartColor(R.color.chart_constellation_galileo),
+        Constellation.BEIDOU to chartColor(R.color.chart_constellation_beidou),
+        Constellation.QZSS to chartColor(R.color.chart_constellation_qzss),
+        Constellation.SBAS to chartColor(R.color.chart_constellation_sbas),
+        Constellation.IRNSS to chartColor(R.color.chart_constellation_irnss),
+    )
+    private val constellationOther = chartColor(R.color.chart_constellation_other)
+
+    private fun constellationStrokeColor(c: Constellation): Int = constellationColors[c] ?: constellationOther
 
     // ==== Touch handling for tap-to-details ====
     override fun onTouchEvent(event: MotionEvent): Boolean {

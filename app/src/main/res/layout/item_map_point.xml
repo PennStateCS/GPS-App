@@ -22,9 +22,7 @@
         android:ellipsize="end"
         android:maxLines="1"
         android:paddingEnd="8dp"
-        android:textColor="?attr/colorOnSurface"
-        android:textSize="10sp"
-        android:textStyle="bold" />
+        android:textAppearance="@style/TextAppearance.App.StatusLabel" />
 
     <Switch
         android:id="@+id/map_point_visibility_switch"

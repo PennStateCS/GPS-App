@@ -256,20 +256,45 @@
     <color name="ar_overlay_bg_medium">#66000000</color>  <!-- 40 % black – status strip -->
     <color name="ar_overlay_bg_heavy">#BB000000</color>   <!-- 73 % black – alert strip -->
     <color name="ar_overlay_divider">#33FFFFFF</color>    <!-- 20 % white – separator line -->
+    <color name="ar_overlay_ripple">#40FFFFFF</color>     <!-- 25 % white – pressed state on AR / map tool buttons -->
+    <!-- AR canvas labels (CoordinateLabelOverlay, OffScreenPinIndicatorOverlay): pill scrim + text.
+         Text checked ≥ 4.5:1 on the scrim composited over a white camera frame. -->
+    <color name="ar_overlay_label_bg">#CC111111</color>    <!-- 80 % near-black label pill -->
+    <color name="ar_overlay_text_secondary">#FFCCCCCC</color>  <!-- distance / bearing line -->
+    <color name="ar_overlay_model_accent">#FF00E5FF</color>    <!-- cyan: model-linked pins (text, border, arrow) -->
     <color name="ar_overlay_text">#FFFFFFFF</color>       <!-- pure white – primary text -->
     <color name="ar_overlay_alert">#FFFFC107</color>      <!-- amber – alert/debug text -->
     <color name="map_overlay_bg">#AAFFFFFF</color>        <!-- 67 % white – map panel -->
+    <!-- Point labels drawn into map marker bitmaps (MapOverlayController): white on a 70 % black halo,
+         ≥ 4.5:1 composited over a white map tile (and over satellite imagery, which is darker). -->
+    <color name="map_label_bg">#B3000000</color>
+    <color name="map_label_text">#FFFFFFFF</color>
     <color name="map_grid_line">#80616161</color>        <!-- 50 % mid-gray – survey meter grid (reads on light + satellite tiles) -->
 
-    <!-- GNSS / satellite chart ──────────────────────────────────────────── -->
-    <color name="chart_axis">#BDBDBD</color>
-    <color name="chart_grid">#E0E0E0</color>
+    <!-- GNSS / satellite charts (SatelliteSignalChartView, SkyplotView, SnrBarView) ─────────────
+         Drawn on the card surface. Axis / series / constellation colours ≥ 3:1 and text ≥ 4.5:1 on
+         surface and surfaceContainer in both themes (PaletteContrastChecks). Grid is decorative. -->
+    <color name="chart_axis">#71787E</color>              <!-- = outline; was #BDBDBD (1.9:1) -->
+    <color name="chart_grid">#C5CED8</color>              <!-- = outlineVariant, decorative -->
     <color name="chart_text">#424242</color>
-    <color name="chart_title">#000000</color>
+    <color name="chart_title">#1A1C1E</color>
+    <!-- SNR series (used satellites): the semantic success / warning / error foregrounds. -->
     <color name="chart_bar_strong">@color/status_fix</color>
     <color name="chart_bar_medium">@color/status_float</color>
     <color name="chart_bar_weak">@color/status_no_fix</color>
-    <color name="chart_bar_unused">#9E9E9E</color>
+    <color name="chart_bar_unused">#757575</color>        <!-- was #9E9E9E (2.7:1) -->
+    <!-- Skyplot "used in fix" halo around a satellite dot. -->
+    <color name="chart_used_halo">#1A1C1E</color>
+    <!-- Skyplot constellation strokes: darker hues in light (the pastels were ~1.3:1 on white),
+         the original pastels in dark. -->
+    <color name="chart_constellation_gps">#1565C0</color>
+    <color name="chart_constellation_glonass">#8E24AA</color>
+    <color name="chart_constellation_galileo">#2E7D32</color>
+    <color name="chart_constellation_beidou">#8D6E00</color>
+    <color name="chart_constellation_qzss">#5E35B1</color>
+    <color name="chart_constellation_sbas">#546E7A</color>
+    <color name="chart_constellation_irnss">#C43E00</color>
+    <color name="chart_constellation_other">#757575</color>
 
     <!-- Compact GNSS toolbar warning pill (on the navy strip, both themes): icon + text on a filled pill.
          critical = red / white (5.6:1) with a light-red 1 dp outline so the pill edge reads on navy

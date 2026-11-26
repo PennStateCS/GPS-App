@@ -53,7 +53,7 @@ class SatelliteSignalChartView @JvmOverloads constructor(
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = colorRes(R.color.chart_text)
-        textSize = sp(10f)
+        textSize = sp(12f)   // axis / PRN / legend labels: was 10 sp
     }
     private val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = colorRes(R.color.chart_title)
@@ -236,8 +236,12 @@ class SatelliteSignalChartView @JvmOverloads constructor(
         line(20f, colorWeak)
 
         // Y labels
-        canvas.drawText("50", plotLeft - dp(12f), plotTop + textPaint.textSize / 2f, textPaint)
-        canvas.drawText("0",  plotLeft - dp(12f), plotBottom + textPaint.textSize / 2f, textPaint)
+        // Right-aligned against the axis so the larger 12 sp labels don't run into it.
+        val oldAlign = textPaint.textAlign
+        textPaint.textAlign = Paint.Align.RIGHT
+        canvas.drawText("50", plotLeft - dp(3f), plotTop + textPaint.textSize / 2f, textPaint)
+        canvas.drawText("0",  plotLeft - dp(3f), plotBottom + textPaint.textSize / 2f, textPaint)
+        textPaint.textAlign = oldAlign
 
         if (sats.isEmpty()) return
 

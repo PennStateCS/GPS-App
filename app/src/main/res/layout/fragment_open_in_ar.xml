@@ -82,9 +82,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Localizing AR…"
-                android:textColor="@color/ar_overlay_text"
-                android:textSize="16sp"
-                android:fontFamily="sans-serif-medium" />
+                android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                android:textColor="@color/ar_overlay_text" />
 
             <TextView
                 android:id="@+id/txtLocalizingHint"
@@ -92,33 +91,10 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="3dp"
                 android:text="Hold steady and point the camera at nearby buildings, trees, or ground features."
-                android:textColor="@color/ar_overlay_text"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.AR.Overlay"
                 android:alpha="0.85" />
         </LinearLayout>
     </LinearLayout>
-
-    <!-- Compact, persistent AR-view-quality chip. Shown AFTER anchors are placed (the banner is for
-         the pre-placement phase). Reports ARCore geospatial (AR) confidence + horizontal accuracy —
-         distinct from the GNSS fix chip below the Back button. -->
-    <TextView
-        android:id="@+id/chipArQuality"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|start"
-        android:layout_marginTop="98dp"
-        android:layout_marginStart="12dp"
-        android:maxWidth="300dp"
-        android:text="AR quality: —"
-        android:textColor="@color/ar_overlay_text"
-        android:textSize="11sp"
-        android:paddingHorizontal="10dp"
-        android:paddingVertical="5dp"
-        android:background="@drawable/bg_ar_chip"
-        android:visibility="gone"
-        android:clickable="false"
-        android:focusable="false"
-        android:focusableInTouchMode="false" />
 
     <!-- ── Floating toolbar ───────────────────────────────────────────────── -->
 
@@ -149,29 +125,57 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="5dp"
             android:text="Back"
+            android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
             android:textColor="@color/ar_overlay_text"
-            android:textSize="13sp"
-            android:fontFamily="sans-serif-medium"
             android:importantForAccessibility="no" />
     </LinearLayout>
 
-    <!-- AR GNSS status chip — top-left, below Back button -->
-    <TextView
-        android:id="@+id/chipArGnssStatus"
+    <!-- AR GNSS status chip (below the Back button) and the AR-view-quality chip under it, stacked in
+         a column so a larger font scale pushes the second chip down instead of overlapping it (they
+         used to sit at fixed 68 dp / 98 dp offsets). -->
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
         android:layout_marginTop="68dp"
         android:layout_marginStart="12dp"
-        android:text="Acquiring…"
-        android:textColor="@color/ar_overlay_text"
-        android:textSize="11sp"
-        android:paddingHorizontal="10dp"
-        android:paddingVertical="5dp"
-        android:background="@drawable/bg_ar_chip"
-        android:clickable="false"
-        android:focusable="false"
-        android:focusableInTouchMode="false" />
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/chipArGnssStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxWidth="300dp"
+            android:text="Acquiring…"
+            android:textAppearance="@style/TextAppearance.App.AR.Overlay"
+            android:fontFeatureSettings="tnum"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="5dp"
+            android:background="@drawable/bg_ar_chip"
+            android:clickable="false"
+            android:focusable="false"
+            android:focusableInTouchMode="false" />
+
+        <!-- Compact, persistent AR-view-quality chip. Shown AFTER anchors are placed (the banner is for
+             the pre-placement phase). Reports ARCore geospatial (AR) confidence + horizontal accuracy —
+             distinct from the GNSS fix chip above. -->
+        <TextView
+            android:id="@+id/chipArQuality"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:maxWidth="300dp"
+            android:text="AR quality: —"
+            android:textAppearance="@style/TextAppearance.App.AR.Overlay"
+            android:fontFeatureSettings="tnum"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="5dp"
+            android:background="@drawable/bg_ar_chip"
+            android:visibility="gone"
+            android:clickable="false"
+            android:focusable="false"
+            android:focusableInTouchMode="false" />
+    </LinearLayout>
 
     <!--
         Toggle button — always visible in the top-right corner.
@@ -214,11 +218,13 @@
         Hidden by default (GONE). The toggle button slides it in/out with a
         translationX animation so it never overlaps the camera feed unnecessarily.
 
-        Each item: 24dp icon + 9sp label, separated by subtle dividers.
+        Each item: 24dp icon + 12 sp label (wraps to two lines at large font scales; the card widens
+        from its 72 dp minimum rather than clipping), separated by subtle dividers.
     -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/arFloatingToolbar"
-        android:layout_width="72dp"
+        android:layout_width="wrap_content"
+        android:minWidth="72dp"
         android:layout_height="wrap_content"
         android:layout_gravity="top|end"
         android:layout_marginTop="68dp"
@@ -257,6 +263,7 @@
                     android:layout_marginTop="3dp"
                     android:text="Anchor"
                     android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:maxWidth="96dp"
                     android:gravity="center" />
             </LinearLayout>
 
@@ -289,6 +296,7 @@
                     android:layout_marginTop="3dp"
                     android:text="Test"
                     android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:maxWidth="96dp"
                     android:gravity="center" />
             </LinearLayout>
 
@@ -318,6 +326,7 @@
                     android:layout_marginTop="3dp"
                     android:text="Cube"
                     android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:maxWidth="96dp"
                     android:gravity="center" />
             </LinearLayout>
 
@@ -349,6 +358,7 @@
                     android:layout_marginTop="3dp"
                     android:text="All"
                     android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:maxWidth="96dp"
                     android:gravity="center" />
             </LinearLayout>
 
@@ -380,6 +390,7 @@
                     android:layout_marginTop="3dp"
                     android:text="Stored"
                     android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:maxWidth="96dp"
                     android:gravity="center" />
             </LinearLayout>
 
@@ -419,6 +430,7 @@
                         android:layout_marginTop="3dp"
                         android:text="Occlude"
                         android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                        android:maxWidth="96dp"
                         android:gravity="center" />
                 </LinearLayout>
             </LinearLayout>
@@ -460,6 +472,7 @@
                         android:layout_marginTop="3dp"
                         android:text="Planes"
                         android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                        android:maxWidth="96dp"
                         android:gravity="center" />
                 </LinearLayout>
 
@@ -492,6 +505,7 @@
                         android:layout_marginTop="3dp"
                         android:text="Points"
                         android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                        android:maxWidth="96dp"
                         android:gravity="center" />
                 </LinearLayout>
 
@@ -535,6 +549,7 @@
                         android:layout_marginTop="3dp"
                         android:text="Debug"
                         android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                        android:maxWidth="96dp"
                         android:gravity="center" />
                 </LinearLayout>
 

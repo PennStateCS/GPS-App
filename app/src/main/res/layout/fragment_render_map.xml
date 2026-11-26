@@ -34,8 +34,8 @@
         android:background="@drawable/bg_ar_chip"
         android:padding="12dp"
         android:text="@string/render_map_placeholder"
+        android:textAppearance="@style/TextAppearance.App.SectionHeading"
         android:textColor="@color/ar_overlay_text"
-        android:textSize="18sp"
         android:visibility="gone" />
 
     <!-- ── Hidden compatibility stubs ──────────────────────────────────── -->
@@ -333,7 +333,8 @@
 
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/layoutMapTools"
-        android:layout_width="72dp"
+        android:layout_width="wrap_content"
+        android:minWidth="72dp"
         android:layout_height="wrap_content"
         android:layout_gravity="top|end"
         android:layout_marginTop="68dp"
@@ -374,6 +375,7 @@
                     android:layout_marginTop="3dp"
                     android:text="Normal"
                     android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:maxWidth="96dp"
                     android:gravity="center" />
             </LinearLayout>
 
@@ -405,6 +407,7 @@
                     android:layout_marginTop="3dp"
                     android:text="My Location"
                     android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:maxWidth="96dp"
                     android:gravity="center" />
             </LinearLayout>
 
@@ -436,6 +439,7 @@
                     android:layout_marginTop="3dp"
                     android:text="Center"
                     android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:maxWidth="96dp"
                     android:gravity="center" />
             </LinearLayout>
 
@@ -468,6 +472,7 @@
                     android:layout_marginTop="3dp"
                     android:text="Off"
                     android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:maxWidth="96dp"
                     android:gravity="center" />
             </LinearLayout>
 
@@ -500,6 +505,7 @@
                     android:layout_marginTop="3dp"
                     android:text="Off"
                     android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:maxWidth="96dp"
                     android:gravity="center" />
             </LinearLayout>
 
@@ -531,6 +537,7 @@
                     android:layout_marginTop="3dp"
                     android:text="Fit"
                     android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:maxWidth="96dp"
                     android:gravity="center" />
             </LinearLayout>
 
@@ -652,9 +659,9 @@
 
                 <ImageButton
                     android:id="@+id/btn_selected_close"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:padding="8dp"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:padding="12dp"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="Close selected point"
                     android:src="@drawable/ic_close_24"
@@ -671,9 +678,8 @@
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
                 android:text="—"
-                android:fontFamily="monospace"
-                android:textAppearance="?attr/textAppearanceBodyMedium"
-                android:textColor="?attr/colorOnSurface" />
+                android:textAppearance="@style/TextAppearance.App.Reading"
+                android:fontFeatureSettings="tnum" />
 
             <TextView
                 android:id="@+id/txt_selected_elevation"
@@ -682,8 +688,8 @@
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
                 android:text="—"
-                android:textAppearance="?attr/textAppearanceBodySmall"
-                android:textColor="?attr/colorOnSurfaceVariant" />
+                android:textAppearance="@style/TextAppearance.App.Supporting"
+                android:fontFeatureSettings="tnum" />
 
             <!-- Live relationship: distance + bearing (to current position) -->
             <LinearLayout
@@ -701,8 +707,8 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="—"
-                    android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:textColor="?attr/colorOnSurface" />
+                    android:textAppearance="@style/TextAppearance.App.Reading"
+                    android:fontFeatureSettings="tnum" />
 
                 <TextView
                     android:id="@+id/txt_selected_bearing"
@@ -710,8 +716,8 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="—"
-                    android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:textColor="?attr/colorOnSurface" />
+                    android:textAppearance="@style/TextAppearance.App.Reading"
+                    android:fontFeatureSettings="tnum" />
             </LinearLayout>
 
             <!-- Capture quality: source/fix + accuracy -->
@@ -739,8 +745,8 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="—"
-                    android:textAppearance="?attr/textAppearanceBodySmall"
-                    android:textColor="?attr/colorOnSurfaceVariant" />
+                    android:textAppearance="@style/TextAppearance.App.Supporting"
+                    android:fontFeatureSettings="tnum" />
             </LinearLayout>
 
             <!-- Actions -->
@@ -908,6 +914,7 @@
                         android:layout_height="wrap_content"
                         android:text="—"
                         android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                        android:fontFeatureSettings="tnum"
                         android:textStyle="bold"
                         android:textColor="?attr/colorOnSurface" />
 
@@ -940,6 +947,7 @@
                         android:layout_height="wrap_content"
                         android:text="—"
                         android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                        android:fontFeatureSettings="tnum"
                         android:textStyle="bold"
                         android:textColor="?attr/colorOnSurface" />
 
@@ -954,9 +962,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:text="—"
-                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textAppearance="@style/TextAppearance.App.Reading"
                 android:textColor="?attr/colorOnSurfaceVariant"
-                android:fontFamily="monospace"
+                android:fontFeatureSettings="tnum"
                 android:gravity="center" />
 
             <!-- What ΔN / ΔE mean (survey terminology caption for the line above) -->
@@ -987,6 +995,7 @@
                 android:layout_marginTop="2dp"
                 android:text=""
                 android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:fontFeatureSettings="tnum"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:gravity="center"
                 android:visibility="gone" />

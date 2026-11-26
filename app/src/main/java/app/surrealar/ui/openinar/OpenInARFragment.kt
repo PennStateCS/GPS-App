@@ -1017,7 +1017,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 viewModel.showPlanes.collect { on ->
                     arShowPlanes = on
                     val tint = if (on) requireContext().getColor(R.color.ar_overlay_info)
-                               else    requireContext().getColor(android.R.color.white)
+                               else    requireContext().getColor(R.color.ar_overlay_text)
                     binding.iconTogglePlanes.setColorFilter(tint, android.graphics.PorterDuff.Mode.SRC_IN)
                 }
             }
@@ -1029,7 +1029,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 viewModel.showPointCloud.collect { on ->
                     arShowPointCloud = on
                     val tint = if (on) requireContext().getColor(R.color.ar_overlay_info)
-                               else    requireContext().getColor(android.R.color.white)
+                               else    requireContext().getColor(R.color.ar_overlay_text)
                     binding.iconTogglePointCloud.setColorFilter(tint, android.graphics.PorterDuff.Mode.SRC_IN)
                 }
             }
@@ -1042,7 +1042,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     arOcclusionEnabled = on
                     applyDepthMode()
                     val tint = if (on) requireContext().getColor(R.color.ar_overlay_info)
-                               else    requireContext().getColor(android.R.color.white)
+                               else    requireContext().getColor(R.color.ar_overlay_text)
                     binding.iconToggleOcclusion.setColorFilter(tint, android.graphics.PorterDuff.Mode.SRC_IN)
                     binding.txtToggleOcclusion.text = if (on) "Occlude ✓" else "Occlude"
                 }
@@ -3783,7 +3783,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX    -> "RTK Fix"    to requireContext().getColor(R.color.ar_overlay_success)
             io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT  -> "RTK Float"  to requireContext().getColor(R.color.ar_overlay_warning)
             io.github.pennstatecs.geokit.gnss.model.RtkStatus.DGPS   -> "DGPS"       to requireContext().getColor(R.color.ar_overlay_info)
-            io.github.pennstatecs.geokit.gnss.model.RtkStatus.SINGLE -> "Single"     to requireContext().getColor(android.R.color.white)
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.SINGLE -> "Single"     to requireContext().getColor(R.color.ar_overlay_text)
             else                                                  -> "No Fix"     to requireContext().getColor(R.color.ar_overlay_error)
         }
         val acc = fix.hAccM?.let { " · H ±${"%.2f".format(it)} m" } ?: ""

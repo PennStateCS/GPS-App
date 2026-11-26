@@ -2,7 +2,6 @@ package app.surrealar.ui.openinar
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
@@ -34,6 +33,9 @@ class CoordinateLabelOverlay @JvmOverloads constructor(
 
     private var labels: List<LabelEntry> = emptyList()
     private val dp = context.resources.displayMetrics.density
+    // Label text follows the user's font scale (sp), 12 sp minimum (was 11 / 9 dp).
+    private val sp = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 1f, context.resources.displayMetrics)
+    private fun c(id: Int) = androidx.core.content.ContextCompat.getColor(context, id)
 
     // Pre-computed constants — dp never changes at runtime
     private val pad     = 5f * dp
@@ -43,27 +45,28 @@ class CoordinateLabelOverlay @JvmOverloads constructor(
     private val rect = RectF()
 
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xCC111111.toInt()
+        color = c(app.surrealar.R.color.ar_overlay_label_bg)
         style = Paint.Style.FILL
     }
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF00E5FF.toInt()   // cyan — used for model-linked pins
+        color = c(app.surrealar.R.color.ar_overlay_model_accent)   // cyan — used for model-linked pins
         style = Paint.Style.STROKE
         strokeWidth = 1.5f * dp
     }
     private val whitePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        textSize = 11f * dp
+        color = c(app.surrealar.R.color.ar_overlay_text)
+        textSize = 12f * sp
         typeface = Typeface.DEFAULT_BOLD
     }
     private val cyanPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF00E5FF.toInt()
-        textSize = 11f * dp
+        color = c(app.surrealar.R.color.ar_overlay_model_accent)
+        textSize = 12f * sp
         typeface = Typeface.DEFAULT_BOLD
     }
     private val subtextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFCCCCCC.toInt()
-        textSize = 9f * dp
+        color = c(app.surrealar.R.color.ar_overlay_text_secondary)
+        textSize = 12f * sp
+        fontFeatureSettings = "tnum"   // distance + bearing
     }
 
     init {

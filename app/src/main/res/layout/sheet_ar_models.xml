@@ -22,17 +22,15 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Visible Models"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:textColor="?android:attr/textColorPrimary" />
+        android:textAppearance="@style/TextAppearance.App.SectionHeading" />
 
     <TextView
         android:id="@+id/txtArModelsCount"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="2dp"
-        android:textSize="13sp"
-        android:textColor="?android:attr/textColorSecondary"
+        android:textAppearance="@style/TextAppearance.App.Secondary"
+        android:fontFeatureSettings="tnum"
         android:text="0 shown · 0 nearby" />
 
     <TextView
@@ -40,8 +38,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
-        android:textSize="12sp"
-        android:textColor="@color/app_warning"
+        android:textAppearance="@style/TextAppearance.App.Supporting"
+        android:textColor="?attr/colorStatusWarning"
         android:visibility="gone"
         android:text="Showing many models may reduce AR performance." />
 
@@ -50,8 +48,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
         android:text="Display mode"
-        android:textSize="12sp"
-        android:textColor="?android:attr/textColorSecondary" />
+        android:textAppearance="@style/TextAppearance.App.DataLabel" />
 
     <com.google.android.material.chip.ChipGroup
         android:id="@+id/chipGroupArMode"
@@ -74,8 +71,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Show all nearby"
-            android:textSize="13sp" />
+            android:text="Show all nearby" />
 
         <Button
             android:id="@+id/btnHideAll"
@@ -83,8 +79,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Hide all"
-            android:textSize="13sp" />
+            android:text="Hide all" />
 
         <Button
             android:id="@+id/btnResetToMap"
@@ -92,8 +87,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Use map selection"
-            android:textSize="13sp" />
+            android:text="Use map selection" />
     </LinearLayout>
 
     <TextView
@@ -102,8 +96,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
         android:text="Range"
-        android:textSize="12sp"
-        android:textColor="?android:attr/textColorSecondary" />
+        android:textAppearance="@style/TextAppearance.App.DataLabel" />
 
     <com.google.android.material.chip.ChipGroup
         android:id="@+id/chipGroupArRange"

@@ -2,7 +2,6 @@ package app.surrealar.ui.openinar
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -45,27 +44,30 @@ class OffScreenPinIndicatorOverlay @JvmOverloads constructor(
 
     private var arrows: List<ArrowEntry> = emptyList()
     private val dp = context.resources.displayMetrics.density
+    // Pill text follows the user's font scale (sp), 12 sp minimum (was 9 / 8 dp).
+    private val sp = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 1f, context.resources.displayMetrics)
+    private fun c(id: Int) = androidx.core.content.ContextCompat.getColor(context, id)
 
     private val sz  = 10f * dp   // arrowhead half-size
     private val pad = 4f  * dp
 
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xCC111111.toInt(); style = Paint.Style.FILL
+        color = c(app.surrealar.R.color.ar_overlay_label_bg); style = Paint.Style.FILL
     }
     private val whiteFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE; style = Paint.Style.FILL
+        color = c(app.surrealar.R.color.ar_overlay_text); style = Paint.Style.FILL
     }
     private val cyanFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF00E5FF.toInt(); style = Paint.Style.FILL
+        color = c(app.surrealar.R.color.ar_overlay_model_accent); style = Paint.Style.FILL
     }
     private val whiteNamePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE; textSize = 9f * dp; typeface = Typeface.DEFAULT_BOLD
+        color = c(app.surrealar.R.color.ar_overlay_text); textSize = 12f * sp; typeface = Typeface.DEFAULT_BOLD
     }
     private val cyanNamePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF00E5FF.toInt(); textSize = 9f * dp; typeface = Typeface.DEFAULT_BOLD
+        color = c(app.surrealar.R.color.ar_overlay_model_accent); textSize = 12f * sp; typeface = Typeface.DEFAULT_BOLD
     }
     private val distPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFCCCCCC.toInt(); textSize = 8f * dp
+        color = c(app.surrealar.R.color.ar_overlay_text_secondary); textSize = 12f * sp; fontFeatureSettings = "tnum"
     }
 
     private val path  = Path()
