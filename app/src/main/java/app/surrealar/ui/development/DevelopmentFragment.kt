@@ -86,7 +86,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
     private val devCategories = listOf(
         SettingsCategory(3, "AR Debug",     R.drawable.ic_dev_tools),
         SettingsCategory(7, "GNSS",         R.drawable.ic_satellite_24),
-        SettingsCategory(8, "Raw NMEA Recording", R.drawable.ic_file),
+        SettingsCategory(8, "Raw NMEA Recording", R.drawable.ic_record_24),
         SettingsCategory(4, "Maps Debug",   R.drawable.ic_map),
         SettingsCategory(2, "Permissions",  R.drawable.ic_lock_24),
         SettingsCategory(1, "System Info",  R.drawable.ic_section_info)
