@@ -184,26 +184,32 @@ internal class DataSettingsController(
         saveScope.launch {
             runCatching {
                 // DataOpLog: start / done rows=n / failed (E, with the exception) lines.
-                app.surrealar.util.diagnostics.DataOpLog.run("CSV export", "csv", { n: Int -> n }) {
+                app.surrealar.util.diagnostics.DataOpLog.run("CSV export", "csv",
+                    { r: app.surrealar.data.export.PointsCsvExporter.Result -> r.rowCount }) {
                     val coordSettings = settingsRepo.coordinateSystemSettings.first()
                     // Unreadable option → the default six-column file.
                     val withReference = runCatching { settingsRepo.exportCsvPositionReference.first() }.getOrDefault(false)
                     val points = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
-                    // Per-point datum/projection/geoid conversion is CPU work: keep it off the main thread.
-                    val csv = withContext(Dispatchers.Default) {
-                        app.surrealar.data.export.PointsCsvExporter.build(points, includePositionReference = withReference) {
+                    // Per-point datum/projection/geoid conversion is CPU work: keep it off the main thread. Off the
+                    // main thread the SPCS2022 zone lookup loads the catalog synchronously (never "loading").
+                    val result = withContext(Dispatchers.Default) {
+                        app.surrealar.data.export.PointsCsvExporter.export(points,
+                            app.surrealar.data.export.PointsCsvExporter.Layout.of(coordSettings), withReference) {
                             coordinateSystemService.convertCoordinate(it, coordSettings)
                         }
                     }
                     withContext(Dispatchers.IO) {
                         appContext.contentResolver.openOutputStream(uri, "wt")?.use {
-                            it.write(csv.toByteArray(StandardCharsets.UTF_8))
+                            it.write(result.text.toByteArray(StandardCharsets.UTF_8))
                         } ?: error("Unable to open output stream")
                     }
-                    points.size
+                    if (result.unavailableCount > 0) {
+                        DiagnosticsLogger.w(DiagTags.EXPORT, "CSV export rows without position unavailable=${result.unavailableCount} rows=${result.rowCount}")
+                    }
+                    result
                 }
-            }.onSuccess { n ->
-                fragment.showSettingsMessage("Points CSV exported: $n points", Snackbar.LENGTH_LONG)
+            }.onSuccess { r ->
+                fragment.showSettingsMessage(csvExportMessage(r), Snackbar.LENGTH_LONG)
             }.onFailure { e ->
                 if (e is CancellationException) throw e
                 fragment.showSettingsMessage("Export failed: ${e.message}", Snackbar.LENGTH_LONG)
@@ -367,5 +373,13 @@ internal class DataSettingsController(
         } catch (e: Exception) {
             settingsWarn("Import cancel failed", e)
         }
+    }
+
+    internal companion object {
+        /** Snackbar after a CSV export: the row count, plus how many rows have no position in the chosen system. */
+        fun csvExportMessage(r: app.surrealar.data.export.PointsCsvExporter.Result): String =
+            if (r.unavailableCount == 0) "Points CSV exported: ${r.rowCount} points"
+            else "Points CSV exported: ${r.rowCount} points; ${r.unavailableCount} without a position in the selected " +
+                "coordinate system (blank, reason in the System column)"
     }
 }
