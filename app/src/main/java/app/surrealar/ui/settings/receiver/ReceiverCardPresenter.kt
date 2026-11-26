@@ -99,6 +99,8 @@ data class ReceiverCardModel(
     /** Retry is offered when the saved receiver is not streaming. */
     val canRetry: Boolean,
     val busy: Boolean,
+    /** The receiver selection could not be saved (e.g. the switch to tablet GNSS): shown on the card. */
+    val selectionSaveError: String? = null,
 ) {
     /** A failed switch to ANOTHER receiver (the chip shows the current source): shown as an inline note. */
     val failedSwitch: CardAttempt.Failed? get() = attemptLine as? CardAttempt.Failed
@@ -158,6 +160,7 @@ object ReceiverCardPresenter {
                 (connection == CardConnection.Unavailable || connection == CardConnection.Selected ||
                     connection is CardConnection.Failed),
             busy = s.busy,
+            selectionSaveError = s.selectionSaveError,
         )
     }
 

@@ -133,7 +133,7 @@ class FixSwitchboard(
      * does not count as "received" for the liveness clock; the next fix that transforms successfully clears
      * [fixStale] and publishes normally. Logged once in full, then at most once a minute (no coordinates).
      */
-    private fun onTransformFailed(adapter: SourceAdapter, fix: Fix, e: Exception) {
+    private fun onTransformFailed(adapter: SourceAdapter, fix: Fix, e: Throwable) {
         consecutiveTransformFailures++
         DiagnosticsLogger.every("GNSS", "switchboard.transform", 60_000L, 'E', throwable = e) {
             "GNSS fix transform failed: fix dropped, no live position published " +
@@ -280,13 +280,18 @@ class FixSwitchboard(
                     fixTransform(fix)
                 } catch (ce: kotlinx.coroutines.CancellationException) {
                     throw ce
-                } catch (e: Exception) {
-                    onTransformFailed(next, fix, e)
+                } catch (t: Throwable) {
+                    // Errors too (e.g. a class-init failure): fail closed instead of ending this collector.
+                    // A collector superseded while inside the transform must not touch the new binding's state.
+                    if (generation == bindGeneration) onTransformFailed(next, fix, t)
                     return@collect
                 }
                 if (consecutiveTransformFailures > 0) {
-                    DiagnosticsLogger.i("GNSS", "GNSS fix transform recovered: publishing fixes again " +
-                        "adapter=${next::class.simpleName} droppedFixes=$consecutiveTransformFailures")
+                    // Throttled like the failure side: intermittent failures must not log a line per epoch.
+                    DiagnosticsLogger.every("GNSS", "switchboard.transform.recovered", 60_000L) {
+                        "GNSS fix transform recovered: publishing fixes again " +
+                            "adapter=${next::class.simpleName} droppedFixes=$consecutiveTransformFailures"
+                    }
                     consecutiveTransformFailures = 0
                 }
                 val now = monotonicNowMs()
@@ -304,7 +309,9 @@ class FixSwitchboard(
                 lastFixReceivedAtMs = now
                 if (_fixStale.value) {
                     _fixStale.value = false
-                    DiagnosticsLogger.i("GNSS", "GNSS fixes resumed adapter=${next::class.simpleName}")
+                    DiagnosticsLogger.every("GNSS", "switchboard.fixes.resumed", 60_000L) {
+                        "GNSS fixes resumed adapter=${next::class.simpleName}"
+                    }
                 }
                 _currentFix.value = out
                 _fixes.emit(out)

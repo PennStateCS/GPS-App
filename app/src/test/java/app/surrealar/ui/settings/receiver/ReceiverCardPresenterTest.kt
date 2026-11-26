@@ -190,4 +190,10 @@ class ReceiverCardPresenterTest {
         assertEquals(ValueOrigin.REPORTED,
             present(connected(ExternalReceiverProfile.REACH_RS4_PRO, ProfileOrigin.RECEIVER, rs4ProIdentity())).modelOrigin)
     }
+
+    @Test fun `a selection that could not be saved is surfaced on the card (review M1)`() {
+        val m = present(ReceiverUiFixtures.internal.copy(selectionSaveError = "Tablet GNSS is in use, but the choice could not be saved."))
+        assertEquals("Tablet GNSS is in use, but the choice could not be saved.", m.selectionSaveError)
+        assertEquals(null, present(ReceiverUiFixtures.internal).selectionSaveError)
+    }
 }

@@ -9,7 +9,7 @@ unchanged; this page covers the accuracy fields and their limits.
 Android requires `Location.accuracy` to be set and greater than 0 (`setTestProviderLocation` rejects a
 location without it), so every mock location carries a value, and the extras say where it came from:
 
-| `extras["accuracySource"]` | When | Value |
+| `extras["app.surrealar.accuracySource"]` | When | Value |
 |---|---|---|
 | `reported` | The receiver reported a usable horizontal accuracy (finite, > 0) | The receiver's 68 % radius, unchanged |
 | `estimated` | No receiver accuracy, or an unusable one (NaN, ≤ 0, infinite) | max(DOP × UERE, per-status floor); the floor alone without HDOP |

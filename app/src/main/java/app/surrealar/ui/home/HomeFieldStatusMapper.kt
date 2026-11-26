@@ -358,7 +358,7 @@ object HomeFieldStatusMapper {
 
     /** Recent parse errors only ("in the last minute"); the cumulative total stays on the Developer page. */
     private fun errorsChip(i: Inputs): Chip? =
-        if (i.nmeaParseErrors > 0) Chip("Errors ${i.nmeaParseErrors} in 1 min", Severity.WARNING) else null
+        if (i.nmeaParseErrors > 0) Chip("Errors ${i.nmeaParseErrors} in 1 min", Severity.CAUTION) else null
 
     private fun fmt1(v: Double): String = String.format(Locale.US, "%.1f", v)
 }

@@ -66,7 +66,7 @@ class ReceiverSettingsControllerTest {
                 thread(isDaemon = true) {
                     runCatching {
                         respond.await(15, TimeUnit.SECONDS)
-                        s.getOutputStream().write("\$GPGGA,120000.00,4114.0,N,07552.0,W,4,12,0.8,180.0,M,-34.0,M,1.0,0000*4A\r\n".toByteArray())
+                        s.getOutputStream().write("\$GPGGA,120000.00,4114.0,N,07552.0,W,4,12,0.8,180.0,M,-34.0,M,1.0,0000*7A\r\n".toByteArray())   // valid checksum: the probe verifies it (stabilization item 9)
                         s.getOutputStream().flush()
                         served.incrementAndGet()
                         Thread.sleep(1_000)

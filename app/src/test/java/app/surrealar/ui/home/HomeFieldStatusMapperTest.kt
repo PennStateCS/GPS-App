@@ -369,4 +369,10 @@ class HomeFieldStatusMapperTest {
         assertEquals(PositionReference.UNCONFIRMED, HomeFieldStatusMapper.positionReferenceOf(true, null, unknown))
         assertNull(HomeFieldStatusMapper.positionReferenceOf(true, null, enabled))
     }
+
+    @Test fun `a green High accuracy headline never sits beside a WARNING chip (review L7)`() {
+        val s = map(inputs(rtkStatus = RtkStatus.FIX, hAccM = 0.02, nmeaParseErrors = 3))
+        if (s.severity == HomeFieldStatusMapper.Severity.GOOD)
+            assertTrue(s.chips.none { it.severity == HomeFieldStatusMapper.Severity.WARNING })
+    }
 }

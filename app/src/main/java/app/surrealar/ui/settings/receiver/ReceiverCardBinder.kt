@@ -133,6 +133,11 @@ class ReceiverCardBinder(
             failure.isVisible = true
             failure.text = m.connection.error.message
         }
+        // The selection could not be saved: the active source works now but may not survive a restart.
+        m.selectionSaveError?.let { err ->
+            failure.isVisible = true
+            failure.text = err
+        }
 
         // Mismatch banner.
         val mm = m.mismatch

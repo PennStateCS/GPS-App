@@ -530,7 +530,7 @@ class AndroidMockLocationPublisher(
 
     companion object {
         /** Location extras key: where the horizontal accuracy came from ([ACCURACY_REPORTED] / [ACCURACY_ESTIMATED]). */
-        const val EXTRA_ACCURACY_SOURCE = "accuracySource"
+        const val EXTRA_ACCURACY_SOURCE = "app.surrealar.accuracySource"
         /** The receiver reported the horizontal accuracy (68 % radius). */
         const val ACCURACY_REPORTED = "reported"
         /** No usable receiver accuracy: a conservative app estimate (never receiver-measured). */

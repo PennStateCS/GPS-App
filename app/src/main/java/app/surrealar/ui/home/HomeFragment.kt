@@ -429,10 +429,11 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                         viewModel.sky
                     ) { fix, source, receiver, diag, sky -> FieldInputs(fix, source, receiver, diag, sky) }
                     .combine(receiverConnection.state) { f, conn -> f to conn }
-                    .combine(tiltMonitor.status) { (f, conn), tilt ->
+                    .combine(tiltMonitor.status) { (f, conn), tilt -> Triple(f, conn, tilt) }
+                    .combine(receiverConnection.liveSource) { (f, conn, tilt), live ->
                         val recentErrors = viewModel.parseErrorWindow.update(
                             android.os.SystemClock.elapsedRealtime(), f.diag.totalParseErrors)
-                        buildFieldStatus(f.fix, f.source, f.receiver, f.diag, f.sky, conn, tilt, recentErrors)
+                        buildFieldStatus(f.fix, f.source, f.receiver, f.diag, f.sky, conn, tilt, recentErrors, live)
                     }.distinctUntilChanged()   // diagnostics tick every second; rebuild the chips only on a real change
                         .collectLatest { status ->
                         val b = _binding ?: return@collectLatest
@@ -463,6 +464,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         conn: app.surrealar.receiver.selection.ReceiverSelectionState?,
         tilt: app.surrealar.receiver.tilt.TiltStatus?,
         recentParseErrors: Long,
+        liveSource: app.surrealar.receiver.selection.LiveSourceState? = null,
     ): HomeFieldStatusMapper.FieldStatus = HomeFieldStatusInputs.build(
         snapshot = viewModel.snapshotOf(fix),
         fixProvider = fix?.provider,
@@ -473,6 +475,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         conn = conn,
         tilt = tilt,
         recentParseErrors = recentParseErrors,
+        liveSource = liveSource,
     ).let { HomeFieldStatusMapper.map(it) }.also { status ->
         app.surrealar.gnss.debug.GnssDebugLog.every("home.fieldStatus", "toolbar") {
             "Home Field Status: '${status.headline}' ${status.additionalWarnings} / '${status.primaryDetail}' / " +

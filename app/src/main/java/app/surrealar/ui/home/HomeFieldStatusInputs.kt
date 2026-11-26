@@ -35,6 +35,13 @@ object HomeFieldStatusInputs {
         conn: ReceiverSelectionState?,
         tilt: TiltStatus?,
         recentParseErrors: Long,
+        /**
+         * The receiver-selection core's attribution of the live fix ([app.surrealar.receiver.selection.LiveSourceState]).
+         * When given, an external fix counts as the selected receiver's only if the core attributes it to the
+         * connected receiver (endpoint == saved receiver, link CONNECTED, after the last switch fence): this tells two
+         * external receivers apart, which the fix's provider alone cannot. Null = provider-based rules only.
+         */
+        liveSource: app.surrealar.receiver.selection.LiveSourceState? = null,
     ): HomeFieldStatusMapper.Inputs {
         val externalSelected = source != LocationSourceType.INTERNAL
         val savedHost = receiver.tcpHost.takeIf { it.isNotBlank() }
@@ -48,7 +55,7 @@ object HomeFieldStatusInputs {
             is ConnectionAttempt.Switching -> conn.savedTarget == null || a.target == conn.savedTarget
             else -> false
         }
-        val resolved = HomeLiveSource.resolve(
+        val resolvedByProvider = HomeLiveSource.resolve(
             externalSelected = externalSelected,
             fixProvider = fixProvider,
             fixValid = fixValid,
@@ -58,7 +65,14 @@ object HomeFieldStatusInputs {
             identityHost = conn?.identity?.host,
             savedHost = savedHost,
         )
-        val identity = conn?.identity?.takeIf { resolved.identityConfirmed }
+        val coreExternal = liveSource?.takeIf { it.kind == app.surrealar.receiver.selection.LiveSourceKind.EXTERNAL }?.external
+        // An external fix the core does not attribute to the connected receiver (e.g. receiver A's last fix while
+        // switching to B) is not the selected receiver's position.
+        val resolved = if (liveSource != null && resolvedByProvider.live == HomeLiveSource.Live.EXTERNAL && coreExternal == null)
+            resolvedByProvider.copy(live = HomeLiveSource.Live.NONE, identityConfirmed = false)
+        else resolvedByProvider
+        val identity = if (liveSource != null) coreExternal?.identity
+            else conn?.identity?.takeIf { resolved.identityConfirmed }
         val reportedName = identity?.name?.takeIf { it.isNotBlank() }
         val model = identity?.takeIf { it.modelVerified }?.let { it.recognizedProfile?.label ?: it.reportedModel }
         val externalLive = resolved.live == HomeLiveSource.Live.EXTERNAL

@@ -141,4 +141,30 @@ class HomeFieldStatusInputsTest {
         assertTrue(s.chips.none { it.label.contains("500") })
         assertTrue(status(recentErrors = 0).chips.none { it.label.startsWith("Errors") })
     }
+
+    // ── With the receiver-selection core's live-source attribution (stabilization item 4) ──────────────────
+
+    private fun statusWithLive(live: app.surrealar.receiver.selection.LiveSourceState,
+                               conn: ReceiverSelectionState? = ReceiverUiFixtures.connected(ExternalReceiverProfile.REACH_RS4_PRO,
+                                   identity = ReceiverUiFixtures.rs4ProIdentity())) =
+        HomeFieldStatusMapper.map(HomeFieldStatusInputs.build(
+            snapshot(), Provider.EXTERNAL_TCP, LocationSourceType.EXTERNAL, rs4Pro,
+            DiagnosticData(linesPerSecond = 10.0, totalParseErrors = 0), SkySnapshot(), conn, null, 0, liveSource = live))
+
+    @Test fun `core attributes the fix to the connected receiver - identity and High accuracy shown`() {
+        val live = app.surrealar.receiver.selection.LiveSourceState(
+            kind = app.surrealar.receiver.selection.LiveSourceKind.EXTERNAL,
+            external = app.surrealar.receiver.selection.LiveExternalSource(target, "Base RS4 Pro", ReceiverUiFixtures.rs4ProIdentity()))
+        val s = statusWithLive(live)
+        assertEquals(State.HIGH_ACCURACY, s.state)
+        assertEquals("Reach RS4 Pro base · Emlid Reach RS4 Pro", s.receiverDetail)
+    }
+
+    @Test fun `switching A to B - an external fix the core does not attribute (A's last fix) is not shown as B`() {
+        // Provider is external and the link reads connected, but the core fenced the fix (it predates B's connection).
+        val live = app.surrealar.receiver.selection.LiveSourceState(kind = app.surrealar.receiver.selection.LiveSourceKind.NONE)
+        val s = statusWithLive(live)
+        assertFalse(s.state == State.HIGH_ACCURACY)
+        assertFalse("no receiver-reported identity attached", s.receiverDetail.contains("Emlid Reach RS4 Pro"))
+    }
 }
