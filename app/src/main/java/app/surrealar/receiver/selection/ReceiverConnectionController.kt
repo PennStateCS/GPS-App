@@ -3,6 +3,8 @@ package app.surrealar.receiver.selection
 import app.surrealar.domain.model.ExternalConnectionType
 import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.domain.repository.SettingsRepository
+import app.surrealar.gnss.external.ExternalEndpointTracker
+import io.github.pennstatecs.geokit.gnss.model.Fix
 import app.surrealar.gnss.source.GnssSourceCoordinator
 import app.surrealar.gnss.source.SourceSettings.ProviderChoice
 import app.surrealar.receiver.EmlidDiscovery
@@ -84,6 +86,10 @@ class ReceiverConnectionController(
     private val clockMs: () -> Long = System::currentTimeMillis,
     /** ReceiverDeviceManager.restartDevice: re-polls the device info after a switch / reconnect (null: none). */
     private val restartDevice: (() -> Unit)? = null,
+    /** FixSwitchboard.currentFix: the live fix of the bound provider (for [liveSource]). */
+    private val liveFix: StateFlow<Fix?> = MutableStateFlow(null),
+    /** ExternalEndpointTracker.attempts: which endpoint the external adapter connected to (null: unknown). */
+    private val externalEndpoint: StateFlow<ExternalEndpointTracker.Attempt>? = null,
 ) {
     private val _state = MutableStateFlow(ReceiverSelectionState())
     /** Everything receiver selection shows; see [ReceiverSelectionState]. */
@@ -92,6 +98,22 @@ class ReceiverConnectionController(
     private val _events = MutableSharedFlow<ReceiverSelectionEvent>(extraBufferCapacity = 8)
     /** One-off notices (automatic profile change) for a snackbar. */
     val events: SharedFlow<ReceiverSelectionEvent> = _events.asSharedFlow()
+
+    private val _liveSource = MutableStateFlow(LiveSourceState())
+    /**
+     * The ACTUAL live positioning source (stabilization item 4), as opposed to the selected receiver in [state]: which
+     * kind of source produced the current fix, the external receiver's identity only when the live fix came from
+     * that connected receiver, and the transition in progress otherwise. See [LiveSourceState] / [LiveSourceRules].
+     * Status UI (Home, toolbar, receiver card) should label the live fix from this, never from the saved receiver.
+     */
+    val liveSource: StateFlow<LiveSourceState> = _liveSource.asStateFlow()
+
+    /** The fix that was current at the last fence (switch, link reconnect, endpoint read): never attributed. */
+    @Volatile private var fencedFix: Fix? = null
+    /** The endpoint the external adapter last connected to. */
+    @Volatile private var connectedEndpoint: ReceiverTarget? = null
+    @Volatile private var lastEndpointSeq = -1L
+    private val liveLock = Any()
 
     /** Guards [attemptSeq], [internalSeq], [job] and every active-provider flip made here. */
     private val lock = Any()
@@ -137,6 +159,52 @@ class ReceiverConnectionController(
         }
         observe("captureActive", { captureActive }) { v -> _state.update { it.copy(captureActive = v) } }
         observe("deviceInfo", { deviceInfo }) { _ -> }
+        externalEndpoint?.let { ep ->
+            observe("externalEndpoint", { ep }) { a ->
+                // A new connection attempt: whatever fix is held now came from the previous connection.
+                if (lastEndpointSeq >= 0 && a.seq != lastEndpointSeq) fencedFix = liveFix.value
+                lastEndpointSeq = a.seq
+                connectedEndpoint = if (!a.host.isNullOrBlank() && a.port != null) ReceiverTarget(a.host.trim(), a.port) else null
+                publishLiveSource()
+            }
+        }
+        // Every selection-state change (attempt, provider, link, saved target, identity) and every live fix.
+        scope.launch { _state.collect { publishLiveSource() } }
+        scope.launch {
+            try {
+                liveFix.collect { publishLiveSource() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DiagnosticsLogger.w(DiagTags.RECEIVER, "Receiver selection could not observe the live fix", e)
+            }
+        }
+    }
+
+    /** Recomputes [liveSource] from live values (provider, link, coordinator target) and [state]. */
+    private fun publishLiveSource() {
+        try {
+            synchronized(liveLock) {
+                val s = _state.value
+                val active = coordinator.activeExternalTarget?.let { ReceiverTarget(it.first.trim(), it.second) }
+                _liveSource.value = LiveSourceRules.derive(LiveSourceRules.Input(
+                    activeProvider = activeProvider.value,
+                    fix = liveFix.value,
+                    fencedFix = fencedFix,
+                    link = externalLink?.value,
+                    connectedEndpoint = connectedEndpoint,
+                    endpointKnown = externalEndpoint != null,
+                    activeExternalTarget = active,
+                    selectedSource = s.selectedSource,
+                    savedTarget = s.savedTarget,
+                    savedName = s.savedName,
+                    attempt = s.attempt,
+                    identity = s.identity,
+                ))
+            }
+        } catch (e: Exception) {
+            DiagnosticsLogger.w(DiagTags.RECEIVER, "Live source not updated", e)
+        }
     }
 
     /**
@@ -149,10 +217,13 @@ class ReceiverConnectionController(
     private fun fenceIdentity(reason: String) {
         val current = deviceInfo.value
         staleInfo = current
+        // Likewise the fix held right now belongs to the previous unit / connection: never attributed after this.
+        fencedFix = liveFix.value
         autoAppliedKey = null
         nameFillKey = null
         if (current != null) DiagnosticsLogger.d(DiagTags.RECEIVER) { "Receiver identity waits for a fresh device report reason=\"$reason\"" }
         reevaluateIdentity()
+        publishLiveSource()
         try {
             restartDevice?.invoke()
         } catch (e: Exception) {
@@ -381,6 +452,7 @@ class ReceiverConnectionController(
                         if (sameActive) coordinator.reconnectExternalTcpProvider("reconnect saved receiver #$id")
                         lastActivationSeq = id
                         lastActivationExternal = true
+                        publishLiveSource()
                         true
                     }
                 }
@@ -432,6 +504,7 @@ class ReceiverConnectionController(
                 "External receiver ${if (clearReceiver) "disconnected" else "deselected"}: device GNSS selected" +
                     (if (cancelled) " (test cancelled)" else "") + " attempt=$attemptSeq")
         }
+        publishLiveSource()
         // Queued behind any commit in progress (switchLock): an External commit that was already saving when device
         // GNSS was chosen finishes its write first and does not activate (internalSeq > its id); this save then
         // writes Internal last, so the saved selection matches the active provider.

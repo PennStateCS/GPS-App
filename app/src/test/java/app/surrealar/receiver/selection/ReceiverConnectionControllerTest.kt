@@ -25,6 +25,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -72,7 +73,12 @@ class ReceiverConnectionControllerTest {
         settings = settings, coordinator = coordinator, scope = backgroundScope, probe = probe,
         activeProvider = sourceSettings.activeProvider, externalLink = link, deviceInfo = deviceInfo,
         captureActive = capture, discovery = discovery, clockMs = { 1_000L }, restartDevice = { restarts++ },
+        liveFix = liveFix, externalEndpoint = endpoint,
     )
+
+    /** FixSwitchboard.currentFix and ExternalEndpointTracker.attempts stand-ins (item 4). */
+    private val liveFix = MutableStateFlow<io.github.pennstatecs.geokit.gnss.model.Fix?>(null)
+    private val endpoint = MutableStateFlow(app.surrealar.gnss.external.ExternalEndpointTracker.Attempt(0L, null, null))
 
     private fun TestScope.controller(discovery: ReceiverDiscovery? = null) = newController(discovery).also { runCurrent() }
 
@@ -818,5 +824,144 @@ class ReceiverConnectionControllerTest {
         deviceInfo.value = ReceiverDeviceInfo(host = "192.168.42.7", name = "other-name", model = "Reach RS2+", firmware = "34.10", serial = "SN7")
         runCurrent()
         assertEquals("My rover", settings.name.value)
+    }
+
+    // ── item 4: live positioning source vs selected receiver (controller integration) ──────────
+
+    private fun extFix(t: Long) = LiveSourceRulesTest.fix(io.github.pennstatecs.geokit.gnss.model.Provider.EXTERNAL_TCP, t)
+    private fun devFix(t: Long) = LiveSourceRulesTest.fix(io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL, t)
+    private fun endpointRead(host: String, port: Int) {
+        endpoint.value = app.surrealar.gnss.external.ExternalEndpointTracker.Attempt(endpoint.value.seq + 1, host, port)
+    }
+
+    @Test fun `startup with External saved - device fixes first, then the restored receiver once its own fix arrives`() = runTest {
+        settings.source.value = LocationSourceType.EXTERNAL
+        settings.host.value = "192.168.42.1"; settings.port.value = 9001; settings.name.value = "Base"
+        val c = controller()
+        assertEquals(LiveSourceKind.NONE, c.liveSource.value.kind)
+        assertEquals(SourceTransition.ExternalNotActive(ReceiverTarget("192.168.42.1", 9001)), c.liveSource.value.transition)
+
+        liveFix.value = devFix(1); runCurrent()
+        assertEquals(LiveSourceKind.DEVICE, c.liveSource.value.kind)
+        assertNull("the saved receiver is not proof of the live source", c.liveSource.value.external)
+
+        // GnssSourceCoordinator.restoreSavedSourceOnStartup activates External; the switchboard clears the fix.
+        coordinator.activateExternalTcpProvider("192.168.42.1", 9001, "startup")
+        liveFix.value = null
+        link.value = ConnectionState.CONNECTING; runCurrent()
+        assertEquals(SourceTransition.Connecting(ReceiverTarget("192.168.42.1", 9001)), c.liveSource.value.transition)
+        endpointRead("192.168.42.1", 9001)
+        link.value = ConnectionState.CONNECTED; runCurrent()
+        assertEquals(SourceTransition.WaitingForPosition(ReceiverTarget("192.168.42.1", 9001)), c.liveSource.value.transition)
+
+        val f = extFix(2)
+        liveFix.value = f; runCurrent()
+        val live = c.liveSource.value
+        assertEquals(LiveSourceKind.EXTERNAL, live.kind)
+        assertSame(f, live.fix)
+        assertEquals("Base", live.external!!.name)
+        assertNull(live.transition)
+
+        // A fresh report for this host attaches the identity.
+        deviceInfo.value = info("Reach RS4"); runCurrent()
+        assertEquals("SN1", c.liveSource.value.external!!.identity!!.serial)
+    }
+
+    @Test fun `rapid switching A to B to device GNSS never shows A's fix as B's`() = runTest {
+        workingExternal()
+        endpointRead("192.168.42.1", 9001)
+        deviceInfo.value = info("Reach RS4", serial = "SN-A")
+        val c = controller()
+        val fa = extFix(1)
+        liveFix.value = fa; runCurrent()
+        assertEquals(LiveSourceKind.EXTERNAL, c.liveSource.value.kind)
+        assertEquals("SN-A", c.liveSource.value.external!!.identity!!.serial)
+
+        val bProbe = probe.next()
+        c.connect(ConnectRequest("192.168.42.7", 9001)); runCurrent()
+        assertEquals("A stays live while B is tested", LiveSourceKind.EXTERNAL, c.liveSource.value.kind)
+        assertEquals(SourceTransition.Testing(ReceiverTarget("192.168.42.7", 9001)), c.liveSource.value.transition)
+
+        bProbe.complete(TcpProbeResult.RECEIVING_NMEA); runCurrent()
+        // Switched to B (adapter told to reconnect); the switchboard still holds A's last fix.
+        assertSame(fa, liveFix.value)
+        val s = c.liveSource.value
+        assertEquals(LiveSourceKind.NONE, s.kind)
+        assertNull("A's identity is cleared on the receiver change", s.external)
+        assertEquals(SourceTransition.Connecting(ReceiverTarget("192.168.42.7", 9001)), s.transition)
+
+        // Device GNSS before B produced anything.
+        c.selectInternal(); liveFix.value = null; runCurrent()
+        assertEquals(LiveSourceKind.NONE, c.liveSource.value.kind)
+        assertNull(c.liveSource.value.external)
+        liveFix.value = devFix(3); runCurrent()
+        assertEquals(LiveSourceKind.DEVICE, c.liveSource.value.kind)
+        assertNull(c.liveSource.value.transition)
+    }
+
+    @Test fun `switch to B - only a fix after B's connection is attributed to B`() = runTest {
+        workingExternal()
+        endpointRead("192.168.42.1", 9001)
+        val c = controller()
+        val fa = extFix(1)
+        liveFix.value = fa; runCurrent()
+        c.connect(ConnectRequest("192.168.42.7", 9001)); runCurrent()
+
+        // The adapter reconnects: endpoint B read, link drops and comes back.
+        endpointRead("192.168.42.7", 9001)
+        link.value = ConnectionState.CONNECTING; runCurrent()
+        link.value = ConnectionState.CONNECTED; runCurrent()
+        assertEquals("A's held fix is still not B's", LiveSourceKind.NONE, c.liveSource.value.kind)
+        assertEquals(SourceTransition.WaitingForPosition(ReceiverTarget("192.168.42.7", 9001)), c.liveSource.value.transition)
+
+        val fb = extFix(2)
+        liveFix.value = fb; runCurrent()
+        assertEquals(LiveSourceKind.EXTERNAL, c.liveSource.value.kind)
+        assertSame(fb, c.liveSource.value.fix)
+        assertEquals(ReceiverTarget("192.168.42.7", 9001), c.liveSource.value.external!!.target)
+        assertNull("A's report (other host) is not B's identity", c.liveSource.value.external!!.identity)
+    }
+
+    @Test fun `reconnecting shows a transition and the first fix after the reconnect restores the receiver`() = runTest {
+        workingExternal()
+        endpointRead("192.168.42.1", 9001)
+        val c = controller()
+        val f1 = extFix(1)
+        liveFix.value = f1; runCurrent()
+        link.value = ConnectionState.RECONNECTING; runCurrent()
+        assertEquals(LiveSourceKind.NONE, c.liveSource.value.kind)
+        assertEquals(SourceTransition.Reconnecting(ReceiverTarget("192.168.42.1", 9001)), c.liveSource.value.transition)
+        endpointRead("192.168.42.1", 9001)
+        link.value = ConnectionState.CONNECTED; runCurrent()
+        assertEquals("the pre-drop fix is fenced", LiveSourceKind.NONE, c.liveSource.value.kind)
+        liveFix.value = extFix(2); runCurrent()
+        assertEquals(LiveSourceKind.EXTERNAL, c.liveSource.value.kind)
+    }
+
+    @Test fun `a failed connection keeps device GNSS live and reports the failure`() = runTest {
+        val c = controller()
+        liveFix.value = devFix(1)
+        probe.next().complete(TcpProbeResult.CONNECT_FAILED)
+        c.connect(ConnectRequest("192.168.42.7", 9001)); runCurrent()
+        assertEquals(LiveSourceKind.DEVICE, c.liveSource.value.kind)
+        assertEquals(SourceTransition.ConnectFailed(ReceiverTarget("192.168.42.7", 9001), ConnectError.Unreachable(9001)),
+            c.liveSource.value.transition)
+    }
+
+    @Test fun `a source change during a capture needs confirmation and drops the old identity at once`() = runTest {
+        workingExternal()
+        endpointRead("192.168.42.1", 9001)
+        deviceInfo.value = info("Reach RS4", serial = "SN-A")
+        capture.value = true
+        val c = controller()
+        liveFix.value = extFix(1); runCurrent()
+        assertEquals(ConnectStart.NEEDS_CAPTURE_CONFIRMATION, c.connect(ConnectRequest("192.168.42.7", 9001)))
+        assertEquals("nothing changed without confirmation", LiveSourceKind.EXTERNAL, c.liveSource.value.kind)
+
+        c.connect(ConnectRequest("192.168.42.7", 9001), confirmCaptureStop = true); runCurrent()
+        assertEquals(ProviderChoice.EXTERNAL_TCP, provider.value)
+        assertEquals(LiveSourceKind.NONE, c.liveSource.value.kind)
+        assertNull(c.liveSource.value.external)
+        assertNull(c.liveSource.value.fix)
     }
 }
