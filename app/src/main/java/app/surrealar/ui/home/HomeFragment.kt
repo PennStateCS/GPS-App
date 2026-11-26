@@ -422,15 +422,17 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
                     combine(
-                        viewModel.fixSnapshot,
+                        viewModel.liveFix,
                         settingsRepo.locationSource,
                         settingsRepo.externalReceiverSettings,
                         viewModel.diagnosticData,
                         viewModel.sky
-                    ) { snapshot, source, receiver, diag, sky -> FieldInputs(snapshot, source, receiver, diag, sky) }
+                    ) { fix, source, receiver, diag, sky -> FieldInputs(fix, source, receiver, diag, sky) }
                     .combine(receiverConnection.state) { f, conn -> f to conn }
                     .combine(tiltMonitor.status) { (f, conn), tilt ->
-                        buildFieldStatus(f.snapshot, f.source, f.receiver, f.diag, f.sky, conn, tilt)
+                        val recentErrors = viewModel.parseErrorWindow.update(
+                            android.os.SystemClock.elapsedRealtime(), f.diag.totalParseErrors)
+                        buildFieldStatus(f.fix, f.source, f.receiver, f.diag, f.sky, conn, tilt, recentErrors)
                     }.distinctUntilChanged()   // diagnostics tick every second; rebuild the chips only on a real change
                         .collectLatest { status ->
                         val b = _binding ?: return@collectLatest
@@ -444,23 +446,8 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         }
     }
 
-    /** RS4 / RS4 Pro: a chip naming which point the live positions are (Phase 4 position reference). */
-    private fun positionReferenceChip(
-        source: LocationSourceType, tilt: app.surrealar.receiver.tilt.TiltStatus?,
-    ): HomeFieldStatusMapper.Chip? {
-        if (source == LocationSourceType.INTERNAL || tilt == null || !tilt.applicable) return null
-        return when (tilt.reference) {
-            app.surrealar.receiver.tilt.EpochReference.POLE_TIP -> HomeFieldStatusMapper.Chip("Pole tip", HomeFieldStatusMapper.Severity.GOOD)
-            app.surrealar.receiver.tilt.EpochReference.ANTENNA -> HomeFieldStatusMapper.Chip("Antenna")
-            app.surrealar.receiver.tilt.EpochReference.MAY_BE_COMPENSATED -> HomeFieldStatusMapper.Chip("May be compensated", HomeFieldStatusMapper.Severity.WARNING)
-            app.surrealar.receiver.tilt.EpochReference.ANTENNA_UNCERTAIN -> HomeFieldStatusMapper.Chip("Reference unconfirmed", HomeFieldStatusMapper.Severity.CAUTION)
-            else -> if (tilt.compensatedOutput == app.surrealar.settings.model.CompensatedOutputSetting.UNKNOWN)
-                HomeFieldStatusMapper.Chip("Reference unconfirmed", HomeFieldStatusMapper.Severity.CAUTION) else null
-        }
-    }
-
     private data class FieldInputs(
-        val snapshot: FixSnapshot,
+        val fix: Fix?,
         val source: LocationSourceType,
         val receiver: ExternalReceiverSettings,
         val diag: app.surrealar.gnss.diagnostics.DiagnosticData,
@@ -468,58 +455,30 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     )
 
     private fun buildFieldStatus(
-        snapshot: FixSnapshot,
+        fix: Fix?,
         source: LocationSourceType,
         receiver: ExternalReceiverSettings,
         diag: app.surrealar.gnss.diagnostics.DiagnosticData,
         sky: io.github.pennstatecs.geokit.gnss.model.SkySnapshot,
-        conn: app.surrealar.receiver.selection.ReceiverSelectionState? = null,
-        tilt: app.surrealar.receiver.tilt.TiltStatus? = null,
-    ): HomeFieldStatusMapper.FieldStatus {
-        // Receiver-reported identity (Phase 5): name and recognised model, only for the saved receiver's host.
-        val identity = conn?.identity?.takeIf { it.host == receiver.tcpHost }
-        val reportedName = identity?.name?.takeIf { it.isNotBlank() }
-        val model = identity?.recognizedProfile?.takeIf { identity.modelVerified }?.label
-        // A usable fix is signalled by valid coordinates — NOT by comparing the fix's GNSS/UTC
-        // timestamp to the device wall clock, which can be skewed (or even ahead of) device time
-        // and would wrongly report a live position as "waiting". The app elsewhere shows the fix
-        // and merely annotates staleness rather than withholding it.
-        val hasRecentFix = snapshot.lat != null && snapshot.lon != null && snapshot.timestampMillis > 0
-        val address = receiver.tcpHost.takeIf { it.isNotBlank() }?.let { "$it:${receiver.tcpPort}" }
-        return HomeFieldStatusMapper.map(
-            HomeFieldStatusMapper.Inputs(
-                isInternal = source == LocationSourceType.INTERNAL,
-                externalLabel = receiver.profile.shortLabel,
-                receiverName = reportedName ?: receiver.displayName,
-                receiverModel = model,
-                vAccInvalid = snapshot.verticalAccuracyM?.let {
-                    it >= io.github.pennstatecs.geokit.gnss.accuracy.VerticalAccuracyValidity.INVALID_AT_OR_ABOVE_M || it <= 0.0
-                } == true,
-                positionReference = positionReferenceChip(source, tilt),
-                connectionAddress = address,
-                rtkStatus = RtkStatus.fromPrefKey(snapshot.rtkStatus),
-                hAccM = snapshot.horizontalAccuracyM,
-                vAccM = snapshot.verticalAccuracyM,
-                satsUsed = snapshot.satsUsed,
-                satsVisible = snapshot.satellitesInView,
-                skyTotalUsed = sky.totalUsed,
-                skyTotalVisible = sky.totalVisible,
-                hdop = snapshot.hdop,
-                pdop = snapshot.pDop,
-                correctionAgeS = snapshot.correctionAgeS,
-                correctionStationId = snapshot.correctionStationId,
-                // Real live NMEA stream rate + parse-error count from the DiagnosticsService
-                // singleton (the source the receiver pipeline actually feeds).
-                nmeaLinesPerSecond = diag.linesPerSecond,
-                nmeaParseErrors = diag.totalParseErrors,
-                hasRecentFix = hasRecentFix,
-            )
-        ).also { status ->
-            app.surrealar.gnss.debug.GnssDebugLog.every("home.fieldStatus", "toolbar") {
-                "Home Field Status: '${status.headline}' / '${status.primaryDetail}' / '${status.receiverDetail}' " +
-                    "chips=${status.chips.map { it.label }} | sky=${sky.totalUsed}/${sky.totalVisible} " +
-                    "nmea=${"%.1f".format(diag.linesPerSecond)}/s errors=${diag.totalParseErrors}"
-            }
+        conn: app.surrealar.receiver.selection.ReceiverSelectionState?,
+        tilt: app.surrealar.receiver.tilt.TiltStatus?,
+        recentParseErrors: Long,
+    ): HomeFieldStatusMapper.FieldStatus = HomeFieldStatusInputs.build(
+        snapshot = viewModel.snapshotOf(fix),
+        fixProvider = fix?.provider,
+        source = source,
+        receiver = receiver,
+        diag = diag,
+        sky = sky,
+        conn = conn,
+        tilt = tilt,
+        recentParseErrors = recentParseErrors,
+    ).let { HomeFieldStatusMapper.map(it) }.also { status ->
+        app.surrealar.gnss.debug.GnssDebugLog.every("home.fieldStatus", "toolbar") {
+            "Home Field Status: '${status.headline}' ${status.additionalWarnings} / '${status.primaryDetail}' / " +
+                "'${status.receiverDetail}' chips=${status.chips.map { it.label }} | provider=${fix?.provider} " +
+                "sky=${sky.totalUsed}/${sky.totalVisible} nmea=${"%.1f".format(diag.linesPerSecond)}/s " +
+                "errors(60s)=$recentParseErrors total=${diag.totalParseErrors}"
         }
     }
 
@@ -531,6 +490,10 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         val headlineColor = severityColor(b.root, status.severity, androidx.appcompat.R.attr.colorPrimary)
         b.textFieldStatusHeadline.text = status.headline
         b.textFieldStatusHeadline.setTextColor(headlineColor)
+        // Other warnings that apply are spelled out (never only a colour or a chip).
+        val warnings = status.additionalWarnings
+        b.textFieldStatusWarnings.text = if (warnings.isEmpty()) "" else "Also: " + warnings.joinToString(" · ")
+        b.textFieldStatusWarnings.visibility = if (warnings.isEmpty()) View.GONE else View.VISIBLE
         b.fieldStatusDot.backgroundTintList = android.content.res.ColorStateList.valueOf(headlineColor)
 
         b.textFieldStatusDetailPrimary.text = status.primaryDetail

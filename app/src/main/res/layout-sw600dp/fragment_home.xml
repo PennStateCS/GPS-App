@@ -275,12 +275,28 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:text="Waiting for live position…"
+                                android:text="Waiting for position"
+                                android:maxLines="2"
+                                android:ellipsize="end"
+                                android:accessibilityLiveRegion="polite"
                                 android:textAppearance="?attr/textAppearanceTitleMedium"
                                 android:textStyle="bold"
                                 android:textColor="?attr/colorOnSurface" />
 
                         </LinearLayout>
+
+                        <!-- Other active warnings (text, so meaning never depends on colour); hidden when none. -->
+                        <TextView
+                            android:id="@+id/text_field_status_warnings"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:layout_marginStart="18dp"
+                            android:maxLines="2"
+                            android:ellipsize="end"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurface"
+                            android:visibility="gone" />
 
                         <!-- Always-visible skeleton (values update in place) for a stable height. -->
                         <TextView
@@ -289,7 +305,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="8dp"
                             android:layout_marginStart="18dp"
-                            android:maxLines="1"
+                            android:maxLines="2"
                             android:ellipsize="end"
                             android:text="--"
                             android:textAppearance="?attr/textAppearanceBodyMedium"
@@ -301,7 +317,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:layout_marginStart="18dp"
-                            android:maxLines="1"
+                            android:maxLines="2"
                             android:ellipsize="end"
                             android:text="--"
                             android:textAppearance="?attr/textAppearanceBodySmall"
