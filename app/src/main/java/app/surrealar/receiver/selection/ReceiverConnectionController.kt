@@ -98,6 +98,12 @@ class ReceiverConnectionController(
     private var attemptSeq = 0
     /** [attemptSeq] value of the last switch to device GNSS (an attempt older than it must not activate). */
     private var internalSeq = 0
+    /**
+     * The most recent provider activation made here: its sequence number and whether it was External. A device GNSS
+     * save queued behind a NEWER External commit must not overwrite that commit's saved source (item 6).
+     */
+    private var lastActivationSeq = 0
+    private var lastActivationExternal = false
     private var job: Job? = null
     private var scanJob: Job? = null
 
@@ -373,10 +379,15 @@ class ReceiverConnectionController(
                         val sameActive = forceReconnect && isActiveExternal(target, request)
                         coordinator.activateExternalTcpProvider(target.host, target.port, reason = "settings-connect #$id")
                         if (sameActive) coordinator.reconnectExternalTcpProvider("reconnect saved receiver #$id")
+                        lastActivationSeq = id
+                        lastActivationExternal = true
                         true
                     }
                 }
-                if (activate) rememberRecent(target, (profile ?: storedProfile)?.prefKey, request.name)
+                if (activate) {
+                    _state.update { it.copy(selectionSaveError = null) }
+                    rememberRecent(target, (profile ?: storedProfile)?.prefKey, request.name)
+                }
                 activate
             }
             if (!activated) {
@@ -406,9 +417,13 @@ class ReceiverConnectionController(
     }
 
     private fun switchToInternal(reason: String, clearReceiver: Boolean) {
+        val seq: Int
         synchronized(lock) {
             val cancelled = _state.value.busy
             internalSeq = ++attemptSeq
+            seq = internalSeq
+            lastActivationSeq = seq
+            lastActivationExternal = false
             job?.cancel()
             job = null
             coordinator.activateInternalProvider(reason)
@@ -417,18 +432,40 @@ class ReceiverConnectionController(
                 "External receiver ${if (clearReceiver) "disconnected" else "deselected"}: device GNSS selected" +
                     (if (cancelled) " (test cancelled)" else "") + " attempt=$attemptSeq")
         }
-        scope.launch {
-            switchLock.withLock {
-                try {
-                    settings.setMockLocationEnabled(false)
-                    settings.setLocationSource(LocationSourceType.INTERNAL)
-                    if (clearReceiver) settings.clearExternalTcp()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    DiagnosticsLogger.e(DiagTags.SETTINGS, "Settings save failed section=locationSource", e)
-                }
+        // Queued behind any commit in progress (switchLock): an External commit that was already saving when device
+        // GNSS was chosen finishes its write first and does not activate (internalSeq > its id); this save then
+        // writes Internal last, so the saved selection matches the active provider.
+        scope.launch { switchLock.withLock { persistInternal(seq, clearReceiver) } }
+    }
+
+    /**
+     * Saves device GNSS for the switch [seq] in one transaction ([SettingsRepository.saveInternalSource]), unless a
+     * newer External commit has saved and activated itself meanwhile (its saved source must stand). A failed write is
+     * retried once; if it still fails the active provider stays device GNSS (the user's explicit choice) and
+     * [ReceiverSelectionState.selectionSaveError] reports that the saved selection could not be updated.
+     */
+    private suspend fun persistInternal(seq: Int, clearReceiver: Boolean) {
+        val superseded = synchronized(lock) { lastActivationExternal && lastActivationSeq > seq }
+        if (superseded) {
+            DiagnosticsLogger.i(DiagTags.GNSS, "Device GNSS save skipped: a newer receiver was saved and activated attempt=$seq")
+            return
+        }
+        var failure: Exception? = null
+        for (attempt in 1..2) {
+            try {
+                settings.saveInternalSource(clearReceiver)
+                _state.update { it.copy(selectionSaveError = null) }
+                return
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failure = e
+                DiagnosticsLogger.e(DiagTags.SETTINGS, "Settings save failed section=locationSource try=$attempt", e)
             }
+        }
+        _state.update {
+            it.copy(selectionSaveError = "Device GNSS is active, but the selection could not be saved " +
+                "(${failure?.javaClass?.simpleName ?: "error"}). Select it again; after a restart the previous source may be used.")
         }
     }
 

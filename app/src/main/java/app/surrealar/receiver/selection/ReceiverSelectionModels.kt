@@ -191,6 +191,11 @@ data class ReceiverSelectionState(
     val captureActive: Boolean = false,
     val recent: List<RecentReceiver> = emptyList(),
     val scan: NetworkScanState = NetworkScanState.Idle,
+    /**
+     * Set when switching to device GNSS could not be saved (the write failed twice): device GNSS is active but the
+     * persisted selection may still name the previous source. Cleared by the next successful save.
+     */
+    val selectionSaveError: String? = null,
 ) {
     /** True while a test or switch is in progress. */
     val busy: Boolean get() = attempt is ConnectionAttempt.Testing || attempt is ConnectionAttempt.Switching

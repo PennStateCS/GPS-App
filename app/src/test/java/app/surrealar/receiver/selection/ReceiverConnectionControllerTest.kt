@@ -655,6 +655,147 @@ class ReceiverConnectionControllerTest {
         assertEquals(1, reconnects.size)
     }
 
+    // ── item 6: switching / persistence races (controlled suspension points, no timing) ─────────
+
+    /** Saved selection and active provider agree. */
+    private fun assertConsistent(expected: LocationSourceType) {
+        assertEquals("saved selection", expected, settings.source.value)
+        assertEquals("active provider",
+            if (expected == LocationSourceType.EXTERNAL) ProviderChoice.EXTERNAL_TCP else ProviderChoice.INTERNAL, provider.value)
+    }
+
+    @Test fun `device GNSS chosen while a passed test is saving - the commit never activates and Internal is saved last`() = runTest {
+        workingExternal()
+        settings.profile.value = ExternalReceiverProfile.REACH_RS4
+        settings.name.value = "Rover"
+        val c = controller()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        settings.commitGate = gate
+        c.connect(ConnectRequest("192.168.42.7", 9002))
+        runCurrent()
+        assertTrue("suspended inside the NonCancellable commit", c.state.value.attempt is ConnectionAttempt.Switching)
+
+        c.selectInternal("picker")
+        assertEquals("device GNSS active at once", ProviderChoice.INTERNAL, provider.value)
+        runCurrent()
+        assertEquals("the device GNSS save waits for the commit (switchLock)", 0, settings.internalCommits)
+
+        gate.complete(Unit)
+        runCurrent()
+        assertConsistent(LocationSourceType.INTERNAL)
+        assertEquals(listOf("connType=TCP", "tcp=192.168.42.7:9002", "source=EXTERNAL", "mock=false", "source=INTERNAL"),
+            settings.writes.toList())
+        assertEquals(ConnectionAttempt.Idle, c.state.value.attempt)
+        assertEquals("the obsolete attempt is not remembered as connected", 0, settings.recentWrites)
+        assertEquals("no reconnect to the obsolete target", emptyList<String>(), reconnects)
+        assertEquals("receiver-specific settings kept", ExternalReceiverProfile.REACH_RS4, settings.profile.value)
+        assertNull(c.state.value.selectionSaveError)
+    }
+
+    @Test fun `A saving, B testing, then device GNSS - neither A nor B activates`() = runTest {
+        probe.ignoreCancellation = true
+        val c = controller()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        settings.commitGate = gate
+        c.connect(ConnectRequest("192.168.42.7", 9001))           // A: test passes, commit suspends
+        runCurrent()
+        val bProbe = probe.next()
+        assertEquals(ConnectStart.STARTED, c.connect(ConnectRequest("192.168.42.8", 9001)))   // B supersedes
+        runCurrent()
+        c.selectInternal()
+        gate.complete(Unit)
+        runCurrent()
+        bProbe.complete(TcpProbeResult.RECEIVING_NMEA)            // B's (uncancellable) probe still delivers
+        runCurrent()
+
+        assertConsistent(LocationSourceType.INTERNAL)
+        assertEquals("only A's commit and the device GNSS save were written", 1, settings.receiverCommits)
+        assertEquals(1, settings.internalCommits)
+        assertEquals(ConnectionAttempt.Idle, c.state.value.attempt)
+    }
+
+    @Test fun `device GNSS then a newer receiver - the newer receiver ends saved and active`() = runTest {
+        val c = controller()
+        val internalGate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        settings.internalGate = internalGate
+        workingExternal()
+        c.selectInternal()
+        runCurrent()                                             // device GNSS save suspended (holds switchLock)
+        assertEquals(ConnectStart.STARTED, c.connect(ConnectRequest("192.168.42.7", 9001)))
+        runCurrent()
+        assertTrue("B's commit waits behind the device GNSS save", c.state.value.attempt is ConnectionAttempt.Testing)
+        assertEquals(0, settings.receiverCommits)
+        internalGate.complete(Unit)
+        runCurrent()
+
+        assertConsistent(LocationSourceType.EXTERNAL)
+        assertEquals("192.168.42.7", settings.host.value)
+        assertTrue(c.state.value.attempt is ConnectionAttempt.Succeeded)
+    }
+
+    @Test fun `A saving, device GNSS, then B - B ends saved and active`() = runTest {
+        val c = controller()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        settings.commitGate = gate
+        c.connect(ConnectRequest("192.168.42.7", 9001))
+        runCurrent()
+        c.selectInternal()
+        c.connect(ConnectRequest("192.168.42.8", 9001))
+        runCurrent()
+        gate.complete(Unit)
+        runCurrent()
+        assertConsistent(LocationSourceType.EXTERNAL)
+        assertEquals("192.168.42.8", settings.host.value)
+        assertEquals(ProviderChoice.EXTERNAL_TCP, provider.value)
+        assertEquals("192.168.42.8" to 9001, coordinator.activeExternalTarget)
+    }
+
+    @Test fun `a repeat tap while the passed test is saving starts nothing`() = runTest {
+        val c = controller()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        settings.commitGate = gate
+        c.connect(ConnectRequest("192.168.42.7", 9001))
+        runCurrent()
+        assertEquals(ConnectStart.DUPLICATE_IGNORED, c.connect(ConnectRequest("192.168.42.7", 9001)))
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(1, probe.tcpCalls)
+        assertEquals(1, settings.receiverCommits)
+        assertConsistent(LocationSourceType.EXTERNAL)
+    }
+
+    @Test fun `the device GNSS save is one transaction and a failed write is retried`() = runTest {
+        workingExternal()
+        settings.mock.value = true
+        val c = controller()
+        settings.failInternalSaves = 1
+        c.selectInternal()
+        runCurrent()
+        assertConsistent(LocationSourceType.INTERNAL)
+        assertEquals(false, settings.mock.value)
+        assertEquals(1, settings.internalCommits)
+        assertNull(c.state.value.selectionSaveError)
+        assertEquals("host/port kept (selectInternal)", "192.168.42.1", settings.host.value)
+    }
+
+    @Test fun `a device GNSS save that keeps failing is reported, never half-applied`() = runTest {
+        workingExternal()
+        settings.mock.value = true
+        val c = controller()
+        settings.failInternalSaves = 2
+        c.selectInternal()
+        runCurrent()
+        assertEquals("device GNSS stays active (the user's choice)", ProviderChoice.INTERNAL, provider.value)
+        assertEquals("nothing half-applied", true, settings.mock.value)
+        assertEquals(LocationSourceType.EXTERNAL, settings.source.value)
+        assertTrue(c.state.value.selectionSaveError != null)
+        // The next successful save clears it.
+        c.selectInternal()
+        runCurrent()
+        assertConsistent(LocationSourceType.INTERNAL)
+        assertNull(c.state.value.selectionSaveError)
+    }
+
     @Test fun `a reconnect keeps the saved name and a reported name fills a blank one`() = runTest {
         workingExternal()
         settings.name.value = "Base"

@@ -48,4 +48,18 @@ interface SettingsRepository :
         if (profile != null) setExternalReceiverProfile(profile, origin)
         setLocationSource(source)
     }
+
+    /**
+     * Stabilization item 6: saves device GNSS as the selected source in ONE DataStore transaction: mock-location
+     * publishing off, selected source Internal and, with [clearReceiver], the saved host/port/name removed. The profile,
+     * its origin, recent receivers and every receiver-specific setting are kept.
+     *
+     * The default (test fakes, older implementations) performs the separate writes and is NOT atomic;
+     * [app.surrealar.data.settings.repository.SettingsRepositoryImpl] overrides it with a single edit.
+     */
+    suspend fun saveInternalSource(clearReceiver: Boolean) {
+        setMockLocationEnabled(false)
+        setLocationSource(app.surrealar.domain.model.LocationSourceType.INTERNAL)
+        if (clearReceiver) clearExternalTcp()
+    }
 }
