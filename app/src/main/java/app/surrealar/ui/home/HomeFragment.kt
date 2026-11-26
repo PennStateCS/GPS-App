@@ -403,12 +403,11 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
      * The toolbar pipeline's stabilised correction health (same value the toolbar and the GNSS Status report use), or
      * null when the host has no toolbar (Home then falls back to its raw stale rule).
      */
-    private fun toolbarCorrectionHealth(): kotlinx.coroutines.flow.Flow<app.surrealar.gnss.status.CorrectionHealth?> {
+    private fun toolbarCorrectionHealth(): kotlinx.coroutines.flow.Flow<HomeToolbarCorrection?> {
         val host = activity as? app.surrealar.ui.toolbar.report.GnssStatusHost
             ?: return kotlinx.coroutines.flow.flowOf(null)
-        return host.gnssToolbarFrames.map { frame ->
-            (frame?.result as? app.surrealar.ui.toolbar.ToolbarMapResult.Render)?.state?.correctionHealth
-        }.distinctUntilChanged()
+        // Tagged with source / receiver / provider so Home applies it only to the same live fix stream.
+        return host.gnssToolbarFrames.map { HomeToolbarCorrection.of(it) }.distinctUntilChanged()
     }
 
     private fun setupFieldStatusObserver() {
@@ -479,7 +478,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         tilt: app.surrealar.receiver.tilt.TiltStatus?,
         recentParseErrors: Long,
         liveSource: app.surrealar.receiver.selection.LiveSourceState? = null,
-        correctionHealth: app.surrealar.gnss.status.CorrectionHealth? = null,
+        toolbarCorrection: HomeToolbarCorrection? = null,
     ): HomeFieldStatusMapper.FieldStatus = HomeFieldStatusInputs.build(
         snapshot = viewModel.snapshotOf(fix),
         fixProvider = fix?.provider,
@@ -491,7 +490,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         tilt = tilt,
         recentParseErrors = recentParseErrors,
         liveSource = liveSource,
-        correctionHealth = correctionHealth,
+        toolbarCorrection = toolbarCorrection,
     ).let { HomeFieldStatusMapper.map(it) }.also { status ->
         app.surrealar.gnss.debug.GnssDebugLog.every("home.fieldStatus", "toolbar") {
             "Home Field Status: '${status.headline}' ${status.additionalWarnings} / '${status.primaryDetail}' / " +

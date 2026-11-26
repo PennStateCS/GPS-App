@@ -96,14 +96,21 @@ entered only when the age is **2 s below** the threshold being left (or an age i
 **continuously for 3 s**. The tracker resets on a source / receiver change or a receiver switch. Device GNSS and
 replay never show correction warnings.
 
-Home keeps its raw rule (stale at > 15 s, no hysteresis): its warnings are therefore always a subset of the
-toolbar's for the same fix; on recovery the toolbar may keep "Corrections stale" up to ~3 s longer (the conservative
-direction).
+**Who owns what:** the toolbar pipeline owns the one `CorrectionHealthTracker` (hysteresis). The GNSS Status report
+reads the toolbar's own frames, and Home Field Status consumes the same stabilised state
+(`HomeToolbarCorrection`), so all three show the same aging / stale / unavailable warning. Home uses it only when the
+frame was computed for the same selected source, receiver (profile + host:port) and live provider; otherwise (for at
+most one 250 ms sample after a source or receiver change, or when the toolbar has no live frame) Home falls back to
+its raw rule (stale at > 15 s, no hysteresis), so a previous receiver's warning is never applied to a new receiver.
+
+**Recovery:** by design a warning persists for ≥ 3 s after the live age is fine again. While it is held only by the
+hysteresis (`CorrectionHealthTracker.recovering`), Home's RTK chip reads "RTK 1.0s · recovering" (caution) next to
+the warning, so the live age and the warning never read as a contradiction. The report keeps the live age row.
 
 ## Shared interpretation (`GnssStatusInterpreter`)
 
 One pure model used by the toolbar, the report **and** Home Field Status (`HomeFieldStatusMapper` rows 8–16 now
-delegate to it; Home's behaviour and tests are unchanged):
+delegate to it, and Home takes the toolbar's stabilised correction health for the same live fix stream):
 
 - **Quality:** High accuracy (RTK Fix, reported hAcc ≤ 0.05 m) · RTK Fixed — accuracy unverified · Accuracy below
   target · RTK Float · Low accuracy (> 1 m reported) · Position available.

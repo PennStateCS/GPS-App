@@ -63,7 +63,10 @@ object HomeFieldStatusMapper {
     enum class State {
         WAITING, CONNECTING, RECONNECTING, NO_RECEIVER_DATA, INTERNAL_GPS, REPLAY,
         CORRECTIONS_STALE, REFERENCE_UNCONFIRMED, VERTICAL_INVALID,
-        /** Toolbar-only correction states of the shared interpreter; Home never produces them (raw staleness only). */
+        /**
+         * Correction states from the toolbar's stabilised correction health ([Inputs.correctionHealth]); without it
+         * (no matching toolbar frame) Home uses its raw stale rule and cannot produce these.
+         */
         CORRECTIONS_UNAVAILABLE, CORRECTIONS_AGING,
         HIGH_ACCURACY, FIX_UNVERIFIED, ACCURACY_BELOW_TARGET, FLOAT, LOW_ACCURACY, POSITION_AVAILABLE,
     }
@@ -144,9 +147,17 @@ object HomeFieldStatusMapper {
         val link: Link = if (isInternal) Link.NOT_APPLICABLE else Link.CONNECTED,
         /**
          * The toolbar's stabilised correction health (aging / stale / unavailable with hysteresis), so Home, the
-         * toolbar and the GNSS Status report show the same correction state. Null = Home's raw stale rule only.
+         * toolbar and the GNSS Status report show the same correction state; a warning may persist briefly after the
+         * live age recovers, by design ([correctionRecovering]). Null = no matching toolbar frame: Home's raw stale
+         * rule (age > 15 s, no hysteresis) only.
          */
         val correctionHealth: app.surrealar.gnss.status.CorrectionHealth? = null,
+        /**
+         * [correctionHealth]'s warning is held only by hysteresis: the live correction age has already recovered. The
+         * RTK chip then says "recovering" next to the live age, so "Corrections stale" + "RTK 1.0s" never read as a
+         * contradiction.
+         */
+        val correctionRecovering: Boolean = false,
     )
 
     fun map(i: Inputs): FieldStatus {
@@ -213,8 +224,8 @@ object HomeFieldStatusMapper {
         val receiverDetail = liveReceiverDetail(i)
         val chips = buildExternalChips(i)
 
-        // Rows 8–16: the shared interpretation (also used by the toolbar and the GNSS Status report). Home uses the
-        // raw staleness rule (no hysteresis), so only rows 8–10 can produce a warning here.
+        // Rows 8–16: the shared interpretation (also used by the toolbar and the GNSS Status report), with the
+        // toolbar's stabilised correction health when a matching frame exists (else the raw stale rule).
         val interp = interpret(i)
         interp.warnings.firstOrNull()?.let { w ->
             return FieldStatus(stateOf(w), w.text, primary, receiverDetail, chips, severityOf(w.severity), openMap,
@@ -236,7 +247,10 @@ object HomeFieldStatusMapper {
     ): PositionReference? =
         GnssStatusInterpreter.referenceOf(applicable, reference, compensatedOutput)?.let { PositionReference.valueOf(it.name) }
 
-    /** The shared interpretation of a live external fix for these inputs (raw staleness, no hysteresis). */
+    /**
+     * The shared interpretation of a live external fix for these inputs: the toolbar's stabilised correction health
+     * when given ([Inputs.correctionHealth]), else Home's raw stale rule.
+     */
     fun interpret(i: Inputs): GnssStatusInterpreter.Interpretation = GnssStatusInterpreter.interpret(
         GnssStatusInterpreter.Inputs(
             rtkStatus = i.rtkStatus,
@@ -343,7 +357,14 @@ object HomeFieldStatusMapper {
     private fun rtkChip(i: Inputs): Chip? {
         val age = i.correctionAgeS ?: return null
         if (age < 0) return null
-        return if (age > STALE_CORRECTION_S) Chip("RTK stale", Severity.WARNING) else Chip("RTK ${GnssStatusFormatter.formatAgeSeconds(age)}")
+        return when {
+            age > STALE_CORRECTION_S -> Chip("RTK stale", Severity.WARNING)
+            // A correction warning still shown (hysteresis) while the live age is fine again: say so on the chip.
+            i.correctionRecovering && i.correctionHealth != null &&
+                i.correctionHealth != app.surrealar.gnss.status.CorrectionHealth.OK ->
+                Chip("RTK ${GnssStatusFormatter.formatAgeSeconds(age)} · recovering", Severity.CAUTION)
+            else -> Chip("RTK ${GnssStatusFormatter.formatAgeSeconds(age)}")
+        }
     }
 
     private fun baseChip(i: Inputs): Chip? =

@@ -83,7 +83,13 @@ data class ToolbarFrame(
     val inputs: ToolbarInputs,
     val coords: ConvertedPosition?,
     val result: ToolbarMapResult,
+    /** The stabilised correction warning is held only by hysteresis (the raw age already recovered). */
+    val correctionRecovering: Boolean = false,
 )
+
+/** Identifies an external receiver (profile + host:port), as [ToolbarInputs.receiverKey] uses it. */
+fun toolbarReceiverKey(s: app.surrealar.settings.model.ExternalReceiverSettings): String =
+    "${s.profile.prefKey}@${s.tcpHost}:${s.tcpPort}"
 
 /**
  * The toolbar's data pipeline, kept free of Android so its threading and error handling can be
@@ -125,7 +131,7 @@ object ToolbarPipeline {
                     i.source, i.fix, i.sky, i.externalLabel, coords, i.link, memory?.last, now, i.preferLatLon, i.replayActive,
                     correctionHealth = corrections, reference = i.reference.takeIf { i.source != LocationSourceType.INTERNAL },
                     live = i.live)
-                Step(memory, ToolbarFrame(i, coords, result))
+                Step(memory, ToolbarFrame(i, coords, result, correctionRecovering = health.recovering))
             }
             .mapNotNull { it.frame })
     }.flowOn(computeDispatcher)
@@ -139,6 +145,9 @@ object ToolbarPipeline {
     internal class CorrectionHealthStage {
         private var tracker: CorrectionHealthTracker? = null
         private var key: String? = null
+
+        /** The current warning is held only by hysteresis (see [CorrectionHealthTracker.recovering]). */
+        val recovering: Boolean get() = tracker?.recovering == true
 
         fun update(i: ToolbarInputs, now: Long): CorrectionHealth {
             val t = tracker?.takeIf { it.agingS == i.correctionAgingS.coerceAtMost(it.staleS) }

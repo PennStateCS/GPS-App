@@ -42,8 +42,11 @@ object HomeFieldStatusInputs {
          * external receivers apart, which the fix's provider alone cannot. Null = provider-based rules only.
          */
         liveSource: app.surrealar.receiver.selection.LiveSourceState? = null,
-        /** The toolbar pipeline's stabilised correction health (shared with the toolbar and the report). */
-        correctionHealth: app.surrealar.gnss.status.CorrectionHealth? = null,
+        /**
+         * The toolbar pipeline's stabilised correction state (shared with the toolbar and the report), used only when
+         * it was computed for this same source, receiver and live provider ([HomeToolbarCorrection.forHome]).
+         */
+        toolbarCorrection: HomeToolbarCorrection? = null,
     ): HomeFieldStatusMapper.Inputs {
         val externalSelected = source != LocationSourceType.INTERNAL
         val savedHost = receiver.tcpHost.takeIf { it.isNotBlank() }
@@ -78,6 +81,8 @@ object HomeFieldStatusInputs {
         val reportedName = identity?.name?.takeIf { it.isNotBlank() }
         val model = identity?.takeIf { it.modelVerified }?.let { it.recognizedProfile?.label ?: it.reportedModel }
         val externalLive = resolved.live == HomeLiveSource.Live.EXTERNAL
+        val matchedCorrection = toolbarCorrection?.takeIf { externalLive }
+            ?.forHome(source, app.surrealar.ui.toolbar.toolbarReceiverKey(receiver), fixProvider)
         val vAcc = snapshot.verticalAccuracyM
         return HomeFieldStatusMapper.Inputs(
             isInternal = !externalSelected,
@@ -108,7 +113,8 @@ object HomeFieldStatusInputs {
             hAccEstimated = false,
             live = resolved.live,
             link = resolved.link,
-            correctionHealth = if (externalLive) correctionHealth else null,
+            correctionHealth = matchedCorrection?.health,
+            correctionRecovering = matchedCorrection?.recovering == true,
         )
     }
 }

@@ -2,6 +2,8 @@ package app.surrealar.gnss.status
 
 import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /** Correction-health hysteresis for the compact toolbar (aging = capture limit 10 s, stale = 15 s, margin 2 s, hold 3 s). */
@@ -89,5 +91,38 @@ class CorrectionHealthTrackerTest {
     @Test fun `a stricter capture preset (5 s) ages earlier`() {
         val strict = CorrectionHealthTracker(agingS = 5.0)
         assertEquals(CorrectionHealth.AGING, strict.update(true, 5.5, RtkStatus.FIX, 0))
+    }
+
+    @Test fun `recovering is true only while a warning is held by hysteresis after the raw age improved`() {
+        val tr = CorrectionHealthTracker(agingS = 10.0)
+        assertEquals(CorrectionHealth.STALE, tr.update(true, 20.0, RtkStatus.FIX, 0))
+        assertFalse("raw stale: not recovering", tr.recovering)
+        assertEquals(CorrectionHealth.STALE, tr.update(true, 1.0, RtkStatus.FIX, 250))
+        assertTrue("held stale with a good raw age: recovering", tr.recovering)
+        assertEquals(CorrectionHealth.OK, tr.update(true, 1.0, RtkStatus.FIX, 4_000))
+        assertFalse("released", tr.recovering)
+    }
+
+    @Test fun `rapid correction changes - worse shows at once, better waits, recovering follows`() {
+        val tr = CorrectionHealthTracker(agingS = 10.0)
+        tr.update(true, 1.0, RtkStatus.FIX, 0)
+        assertEquals(CorrectionHealth.AGING, tr.update(true, 11.0, RtkStatus.FIX, 100))
+        assertEquals(CorrectionHealth.STALE, tr.update(true, 16.0, RtkStatus.FIX, 200))
+        assertEquals(CorrectionHealth.STALE, tr.update(true, 2.0, RtkStatus.FIX, 300)); assertTrue(tr.recovering)
+        assertEquals("a relapse resets the hold", CorrectionHealth.STALE, tr.update(true, 17.0, RtkStatus.FIX, 400)); assertFalse(tr.recovering)
+        assertEquals(CorrectionHealth.STALE, tr.update(true, 2.0, RtkStatus.FIX, 3_000))
+        assertEquals(CorrectionHealth.OK, tr.update(true, 2.0, RtkStatus.FIX, 6_100)); assertFalse(tr.recovering)
+    }
+
+    @Test fun `receiver switch (reset) and disconnect (not applicable) clear recovering`() {
+        val tr = CorrectionHealthTracker(agingS = 10.0)
+        tr.update(true, 20.0, RtkStatus.FIX, 0); tr.update(true, 1.0, RtkStatus.FIX, 100)
+        assertTrue(tr.recovering)
+        tr.update(false, null, RtkStatus.NONE, 200)
+        assertFalse("disconnect", tr.recovering)
+        tr.update(true, 20.0, RtkStatus.FIX, 300); tr.update(true, 1.0, RtkStatus.FIX, 400)
+        tr.reset()
+        assertFalse("switch", tr.recovering)
+        assertEquals(CorrectionHealth.OK, tr.current)
     }
 }

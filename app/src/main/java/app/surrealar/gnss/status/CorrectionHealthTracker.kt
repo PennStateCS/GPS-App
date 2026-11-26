@@ -34,6 +34,12 @@ class CorrectionHealthTracker(
 
     var current: CorrectionHealth = CorrectionHealth.OK
         private set
+    /**
+     * True while [current] is held only by hysteresis: the latest raw age would already be less severe, but the
+     * warning has not been clear for long enough yet. UIs showing the live age next to the warning say "recovering".
+     */
+    var recovering: Boolean = false
+        private set
     private var seenCorrections = false
     private var relaxSinceMs: Long? = null
 
@@ -41,6 +47,7 @@ class CorrectionHealthTracker(
         current = CorrectionHealth.OK
         seenCorrections = false
         relaxSinceMs = null
+        recovering = false
     }
 
     /**
@@ -51,15 +58,17 @@ class CorrectionHealthTracker(
         // Not applicable (a fix dropout, a lost/stale display, a reconnect blip): no warning shown now, but KEEP the
         // knowledge that this receiver delivered corrections, so "Corrections unavailable" still appears after the
         // blip (review M3). Only [reset] (source / receiver change) forgets it.
-        if (!applicable) { current = CorrectionHealth.OK; relaxSinceMs = null; return current }
+        if (!applicable) { current = CorrectionHealth.OK; relaxSinceMs = null; recovering = false; return current }
         val age = ageS?.takeIf { it.isFinite() && it >= 0.0 }
         if (age != null) seenCorrections = true
         val raw = classify(age, rtkStatus, agingS, staleS)
         if (raw.rank >= current.rank) {
             current = raw
             relaxSinceMs = null
+            recovering = false
             return current
         }
+        recovering = true
         // Less severe: only once clear of the threshold by the margin, continuously for holdMs. The margin is at most
         // half the threshold, so a short custom limit (e.g. 1–2 s) can still clear (review M1).
         val relaxed = classify(age, rtkStatus, agingS - minOf(marginS, agingS / 2), staleS - minOf(marginS, staleS / 2))
@@ -68,6 +77,7 @@ class CorrectionHealthTracker(
         if (nowMs - since >= holdMs) {
             current = relaxed
             relaxSinceMs = null
+            recovering = raw.rank < current.rank
         }
         return current
     }

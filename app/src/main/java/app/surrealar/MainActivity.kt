@@ -819,7 +819,7 @@ class MainActivity : AppCompatActivity(), app.surrealar.ui.toolbar.report.GnssSt
 
     /** Identifies the external receiver (profile + host:port): a change forgets the toolbar's last fix. */
     private fun receiverKeyFlow(): Flow<String> =
-        settingsRepository.externalReceiverSettings.map { "${it.profile.prefKey}@${it.tcpHost}:${it.tcpPort}" }
+        settingsRepository.externalReceiverSettings.map { app.surrealar.ui.toolbar.toolbarReceiverKey(it) }
             .onStart { emit("") }.distinctUntilChanged()
 
     // ── Toolbar tap actions (wiring only; what's available comes from the mapped state) ──

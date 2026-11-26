@@ -173,8 +173,90 @@ class HomeFieldStatusInputsTest {
         val s = HomeFieldStatusMapper.map(HomeFieldStatusInputs.build(
             snapshot(hAcc = 0.012), Provider.EXTERNAL_TCP, LocationSourceType.EXTERNAL, rs4Pro,
             DiagnosticData(linesPerSecond = 10.0, totalParseErrors = 0), SkySnapshot(), conn, null, 0,
-            correctionHealth = app.surrealar.gnss.status.CorrectionHealth.AGING))
+            toolbarCorrection = tc(app.surrealar.gnss.status.CorrectionHealth.AGING)))
         assertFalse("not High accuracy while corrections are aging", s.state == State.HIGH_ACCURACY)
         assertTrue(s.headline + " / " + s.additionalWarnings, (listOf(s.headline) + s.additionalWarnings).any { it.contains("aging") })
+    }
+
+    // ── Final stabilization: toolbar correction state on Home (recovering chip, stream matching) ──────────────
+
+    private val rs4ProKey = app.surrealar.ui.toolbar.toolbarReceiverKey(rs4Pro)
+
+    /** A toolbar correction state computed for the RS4 Pro stream (override tags to simulate a mismatch). */
+    private fun tc(health: app.surrealar.gnss.status.CorrectionHealth, recovering: Boolean = false,
+                   source: LocationSourceType = LocationSourceType.EXTERNAL, key: String = rs4ProKey,
+                   provider: Provider? = Provider.EXTERNAL_TCP, liveExternal: Boolean = true) =
+        HomeToolbarCorrection(health, recovering, source, key, provider, liveExternal)
+
+    private fun statusWith(toolbar: HomeToolbarCorrection?, ageS: Double? = 1.0, provider: Provider? = Provider.EXTERNAL_TCP,
+                           source: LocationSourceType = LocationSourceType.EXTERNAL) =
+        HomeFieldStatusMapper.map(HomeFieldStatusInputs.build(
+            snapshot(hAcc = 0.012).copy(correctionAgeS = ageS), provider, source, rs4Pro,
+            DiagnosticData(linesPerSecond = 10.0, totalParseErrors = 0), SkySnapshot(),
+            ReceiverUiFixtures.connected(ExternalReceiverProfile.REACH_RS4_PRO), null, 0, toolbarCorrection = toolbar))
+
+    private fun rtkChip(s: HomeFieldStatusMapper.FieldStatus) = s.chips.firstOrNull { it.label.startsWith("RTK") }
+
+    @Test fun `stale then recovered - the held warning shows with an RTK chip that says recovering (item 1)`() {
+        val s = statusWith(tc(app.surrealar.gnss.status.CorrectionHealth.STALE, recovering = true), ageS = 1.0)
+        assertEquals("Corrections stale", s.headline)
+        assertEquals("RTK 1.0s · recovering", rtkChip(s)?.label)
+        // Once the toolbar releases the warning: the plain live age, no warning.
+        val after = statusWith(tc(app.surrealar.gnss.status.CorrectionHealth.OK), ageS = 1.0)
+        assertFalse(after.headline.contains("stale"))
+        assertEquals("RTK 1.0s", rtkChip(after)?.label)
+    }
+
+    @Test fun `a warning that is not merely held keeps the plain age chip (raw age still bad)`() {
+        val s = statusWith(tc(app.surrealar.gnss.status.CorrectionHealth.AGING, recovering = false), ageS = 12.0)
+        assertEquals("Corrections aging", s.headline)
+        assertEquals("RTK 12s", rtkChip(s)?.label)   // ages ≥ 10 s print without a decimal
+        assertEquals("RTK stale", rtkChip(statusWith(tc(app.surrealar.gnss.status.CorrectionHealth.STALE), ageS = 20.0))?.label)
+    }
+
+    @Test fun `receiver switch - a toolbar state computed for another receiver is ignored (item 2)`() {
+        val other = tc(app.surrealar.gnss.status.CorrectionHealth.STALE, recovering = true, key = "reach_rs2_plus@192.168.42.7:9001")
+        val s = statusWith(other, ageS = 1.0)
+        assertFalse("the previous receiver's warning is not shown", s.headline.contains("stale"))
+        assertEquals("RTK 1.0s", rtkChip(s)?.label)
+    }
+
+    @Test fun `internal - external transitions - state from the other source or provider is ignored`() {
+        // Toolbar frame still from tablet GNSS while Home shows the external receiver.
+        assertFalse(statusWith(tc(app.surrealar.gnss.status.CorrectionHealth.STALE, source = LocationSourceType.INTERNAL))
+            .headline.contains("stale"))
+        // Frame's fix from another provider (e.g. the tablet) while Home's live fix is external.
+        assertFalse(statusWith(tc(app.surrealar.gnss.status.CorrectionHealth.STALE, provider = Provider.INTERNAL))
+            .headline.contains("stale"))
+        // Home itself on tablet GNSS: no external correction state at all.
+        val internal = statusWith(tc(app.surrealar.gnss.status.CorrectionHealth.STALE), provider = Provider.INTERNAL,
+            source = LocationSourceType.INTERNAL)
+        assertFalse(internal.headline.contains("Corrections"))
+    }
+
+    @Test fun `disconnect - reconnect - a waiting or lost toolbar frame does not drive Home`() {
+        val waiting = tc(app.surrealar.gnss.status.CorrectionHealth.STALE, liveExternal = false)
+        assertFalse(statusWith(waiting).headline.contains("stale"))
+        // Without a matching toolbar state Home keeps its raw rule: a genuinely old age is still stale.
+        assertEquals("Corrections stale", statusWith(waiting, ageS = 20.0).headline)
+    }
+
+    @Test fun `missing or invalid correction age - no RTK chip, no recovering text`() {
+        assertEquals(null, rtkChip(statusWith(tc(app.surrealar.gnss.status.CorrectionHealth.STALE, recovering = true), ageS = null)))
+        assertEquals(null, rtkChip(statusWith(tc(app.surrealar.gnss.status.CorrectionHealth.OK), ageS = -1.0)))
+    }
+
+    @Test fun `Home and toolbar warnings are compatible - the same health gives the same headline`() {
+        for (h in app.surrealar.gnss.status.CorrectionHealth.entries) {
+            val s = statusWith(tc(h), ageS = if (h == app.surrealar.gnss.status.CorrectionHealth.UNAVAILABLE) null else 1.0)
+            val expected = when (h) {
+                app.surrealar.gnss.status.CorrectionHealth.OK -> null
+                app.surrealar.gnss.status.CorrectionHealth.AGING -> "Corrections aging"
+                app.surrealar.gnss.status.CorrectionHealth.STALE -> "Corrections stale"
+                app.surrealar.gnss.status.CorrectionHealth.UNAVAILABLE -> "Corrections unavailable"
+            }
+            if (expected == null) assertFalse("$h: ${s.headline}", s.headline.startsWith("Corrections"))
+            else assertEquals("$h", expected, s.headline)
+        }
     }
 }

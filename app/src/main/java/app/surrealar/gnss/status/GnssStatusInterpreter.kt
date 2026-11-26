@@ -60,8 +60,9 @@ object GnssStatusInterpreter {
     /**
      * A warning that applies to a live external fix, in precedence order (declaration order = priority; the first
      * one present is the headline). [text] is the full wording (Home headline, report); [shortText] is the compact
-     * toolbar's narrow-width form. Home only ever produces [CORRECTIONS_STALE], the two reference warnings and
-     * [VERTICAL_INVALID] (its precedence rows 8–10, unchanged).
+     * toolbar's narrow-width form. The correction warnings come from the toolbar pipeline's stabilised correction
+     * health (hysteresis), which Home also consumes for the same live fix stream; Home's own fallback (no matching
+     * toolbar frame) is the raw stale rule, which only yields [CORRECTIONS_STALE].
      */
     enum class Warning(val text: String, val shortText: String, val severity: Severity) {
         CORRECTIONS_STALE("Corrections stale", "Corr. stale", Severity.WARNING),
@@ -126,7 +127,10 @@ object GnssStatusInterpreter {
         }
     }
 
-    /** Raw (un-stabilised) staleness, the Home card's rule: a reported age above [STALE_CORRECTION_S]. */
+    /**
+     * Raw (un-stabilised) staleness: a reported age above [STALE_CORRECTION_S]. Home's fallback when no toolbar frame
+     * for the same live fix stream is available (normally Home uses the toolbar's stabilised health).
+     */
     fun rawStale(correctionAgeS: Double?): CorrectionHealth =
         if (correctionAgeS != null && correctionAgeS > STALE_CORRECTION_S) CorrectionHealth.STALE else CorrectionHealth.OK
 
