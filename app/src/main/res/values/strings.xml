@@ -507,4 +507,18 @@
     <string name="details_disconnect_confirm_capture_message">Disconnecting stops the current capture. Tablet GNSS becomes the location source and the saved receiver address and port are removed. The receiver stays under Previously connected.</string>
     <string name="details_disconnect_confirm">Disconnect</string>
     <string name="details_tilt_setting_hint">Change it below the receiver card (Tilt and antenna setup).</string>
+
+    <!-- Compact GNSS toolbar + GNSS Status report (docs/gnss-toolbar.md) -->
+    <string name="gnss_toolbar_open_report_cd">GNSS status details</string>
+    <string name="gnss_toolbar_open_report_action">open GNSS status report</string>
+    <string name="gnss_toolbar_toggle_coords_action">switch between latitude/longitude and grid coordinates</string>
+    <string name="gnss_report_title">GNSS status</string>
+    <string name="gnss_report_copy">Copy status</string>
+    <string name="gnss_report_copied">GNSS status copied</string>
+    <string name="gnss_report_receiver_settings">Receiver settings</string>
+    <string name="gnss_report_show_latlon">Show lat/lon in toolbar</string>
+    <string name="gnss_report_show_grid">Show grid in toolbar</string>
+    <string name="gnss_report_coord_toggle_cd">Coordinate display in the toolbar: %1$s. Double-tap to switch.</string>
+    <string name="gnss_report_section_expand_cd">%1$s, collapsed. Double-tap to expand.</string>
+    <string name="gnss_report_section_collapse_cd">%1$s, expanded. Double-tap to collapse.</string>
 </resources>

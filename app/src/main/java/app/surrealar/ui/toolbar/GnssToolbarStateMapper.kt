@@ -1,6 +1,11 @@
 package app.surrealar.ui.toolbar
 
 import app.surrealar.domain.model.LocationSourceType
+import app.surrealar.gnss.status.CorrectionHealth
+import app.surrealar.gnss.status.GnssStatusInterpreter
+import app.surrealar.receiver.selection.LiveSourceKind
+import app.surrealar.receiver.selection.LiveSourceState
+import app.surrealar.receiver.selection.SourceTransition
 import io.github.pennstatecs.geokit.gnss.accuracy.AccuracyEstimator
 import io.github.pennstatecs.geokit.gnss.accuracy.UereTable
 import app.surrealar.gnss.format.GnssStatusFormatter
@@ -35,6 +40,18 @@ data class ToolbarLinkInputs(
     val locationEnabled: Boolean = true,
 )
 
+/**
+ * The receiver-selection core's view of the live source, reduced to what the toolbar needs: which kind of source the
+ * current fix is attributed to and what transition is in progress (from
+ * [app.surrealar.receiver.selection.ReceiverConnectionController.liveSource]). Distinct-until-changed upstream, so it
+ * does not re-emit per fix.
+ */
+data class ToolbarLiveSource(val kind: LiveSourceKind, val transition: SourceTransition?) {
+    companion object {
+        fun of(s: LiveSourceState) = ToolbarLiveSource(s.kind, s.transition)
+    }
+}
+
 /** The last fix shown for the current source and receiver, kept to explain a lost link. */
 data class LastFix(
     val fix: Fix,
@@ -62,20 +79,31 @@ object GnssToolbarStateMapper {
     private val uereTable = UereTable()
 
     /**
-     * Accuracy colour. External receivers are graded for survey work (RTK: green ≤ 0.30 m, amber
-     * ≤ 1 m). Internal phone/tablet GNSS can never reach that, so grading it the same way made it
-     * permanently red; it gets phone-scale thresholds instead (green ≤ 5 m, amber ≤ 15 m).
+     * Accuracy colour. External receivers are graded with the shared interpretation's survey thresholds: green only
+     * for a receiver-REPORTED value ≤ [GnssStatusInterpreter.HIGH_ACCURACY_H_M] (the Home card's "High accuracy"; an
+     * estimated "~" value is never green), amber ≤ [GnssStatusInterpreter.LOW_ACCURACY_M], red above. (It was green
+     * up to 0.30 m, which contradicted Home's "Accuracy below target".) Internal device GNSS can never reach that, so
+     * grading it the same way made it permanently red; it gets device-scale thresholds instead (green ≤ 5 m, amber
+     * ≤ 15 m).
      */
-    internal fun accuracyLevel(hAccM: Double, isInternal: Boolean): GnssStatusLevel =
+    internal fun accuracyLevel(hAccM: Double, isInternal: Boolean, estimated: Boolean = false): GnssStatusLevel =
         if (isInternal) when {
             hAccM <= INTERNAL_GOOD_M -> GnssStatusLevel.SUCCESS
             hAccM <= INTERNAL_FAIR_M -> GnssStatusLevel.WARNING
             else                     -> GnssStatusLevel.ERROR
         } else when {
-            hAccM <= 0.30 -> GnssStatusLevel.SUCCESS
-            hAccM <= 1.0  -> GnssStatusLevel.WARNING
-            else          -> GnssStatusLevel.ERROR
+            hAccM <= GnssStatusInterpreter.HIGH_ACCURACY_H_M && !estimated -> GnssStatusLevel.SUCCESS
+            hAccM <= GnssStatusInterpreter.LOW_ACCURACY_M -> GnssStatusLevel.WARNING
+            else -> GnssStatusLevel.ERROR
         }
+
+    /** Toolbar colour for an interpretation severity (warnings are never shown by colour alone: they have text). */
+    fun levelOf(s: GnssStatusInterpreter.Severity): GnssStatusLevel = when (s) {
+        GnssStatusInterpreter.Severity.GOOD -> GnssStatusLevel.SUCCESS
+        GnssStatusInterpreter.Severity.CAUTION -> GnssStatusLevel.WARNING
+        GnssStatusInterpreter.Severity.WARNING -> GnssStatusLevel.ERROR
+        GnssStatusInterpreter.Severity.NEUTRAL -> GnssStatusLevel.NONE
+    }
 
     internal const val INTERNAL_GOOD_M = 5.0
     internal const val INTERNAL_FAIR_M = 15.0
@@ -147,33 +175,56 @@ object GnssToolbarStateMapper {
         link: ToolbarLinkInputs,
         last: LastFix?,
         nowMs: Long,
+        /**
+         * What the receiver-selection core says is in progress ([ToolbarLiveSource.transition]); refines the
+         * external wording (Reconnecting…, Switching…, Not connected). Null = link state only.
+         */
+        transition: SourceTransition? = null,
     ): GnssToolbarState {
         val base = waiting(source, externalLabel)
         val status = linkStatus(source, link, nowMs)
         if (status == LinkStatus.LOCATION_OFF) return base.copy(fixText = "Location off", fixDescription = "Location is off")
+        val external = source != LocationSourceType.INTERNAL
 
-        val usable = last?.takeIf { fixMatchesSource(source, it.fix) && nowMs - it.atMs in 0..STALE_KEEP_MS }
+        // A switch to another receiver (or a failed one) never shows the previous receiver's last position.
+        val lastAllowed = !external || (transition !is SourceTransition.Switching && transition !is SourceTransition.ConnectFailed &&
+            transition !is SourceTransition.ExternalNotActive)
+        val usable = last?.takeIf { lastAllowed && fixMatchesSource(source, it.fix) && nowMs - it.atMs in 0..STALE_KEEP_MS }
         if (usable != null && status != LinkStatus.STREAMING) {
             val shown = (map(source, usable.fix, SkySnapshot(), externalLabel, usable.coords) as? ToolbarMapResult.Render)?.state
             if (shown != null) {
+                val lostS = seconds(nowMs - usable.atMs)
                 return shown.copy(
-                    fixText = "${shown.fixText} (lost ${seconds(nowMs - usable.atMs)}s)",
+                    fixText = "${shown.fixText} (lost ${lostS}s)",
                     fixLevel = GnssStatusLevel.NONE,
                     satelliteText = null,
                     accuracyText = null,
+                    accuracyCompactText = null,
                     accuracyLevel = GnssStatusLevel.NONE,
+                    correctionAgeText = null,
                     isWaiting = true,
                     isStale = true,
-                    fixDescription = "Position lost ${seconds(nowMs - usable.atMs)} seconds ago, showing the last position",
+                    fixDescription = "Position lost $lostS seconds ago, showing the last position. Not for capture",
                     satsDescription = null,
                     accuracyDescription = null,
+                    accuracyHDescription = null,
                     ageDescription = null,
                     coordDescription = "Last known " + shown.coordDescription.replaceFirstChar { it.lowercase() },
                     altitudeDescription = "Last known " + shown.altitudeDescription.replaceFirstChar { it.lowercase() },
+                    warnings = emptyList(),
+                    quality = null,
+                    correctionHealth = CorrectionHealth.OK,
                 )
             }
         }
         val silentS = link.lastRawNmeaAtMs?.let { seconds(nowMs - it) }
+        if (external) when (transition) {
+            is SourceTransition.Reconnecting -> return base.copy(fixText = "Reconnecting…", fixDescription = "Reconnecting to receiver")
+            is SourceTransition.Switching -> return base.copy(fixText = "Switching…", fixDescription = "Switching receiver")
+            is SourceTransition.ConnectFailed -> return base.copy(fixText = "Not connected", fixDescription = "Receiver connection failed")
+            is SourceTransition.ExternalNotActive -> return base.copy(fixText = "Not connected", fixDescription = "Receiver not connected")
+            else -> Unit
+        }
         val (text, spoken) = when (status) {
             LinkStatus.CONNECTING -> "Connecting…" to "Connecting to receiver"
             LinkStatus.CONNECTED_NO_DATA -> (silentS?.let { "No data ${it}s" } ?: "No data") to
@@ -274,9 +325,19 @@ object GnssToolbarStateMapper {
         preferLatLon: Boolean = false,
         /** The active provider is NMEA replay (even before its first fix). */
         replayActive: Boolean = false,
+        /** Stabilised correction health from [app.surrealar.gnss.status.CorrectionHealthTracker] (external live fixes). */
+        correctionHealth: CorrectionHealth = CorrectionHealth.OK,
+        /** RS4 / RS4 Pro position reference (external only); null = not applicable. */
+        reference: GnssStatusInterpreter.Reference? = null,
+        /** The receiver-selection core's live source (kind + transition); null = provider-based rules only. */
+        live: ToolbarLiveSource? = null,
     ): ToolbarMapResult {
-        if (fix == null) {
-            val s = noFix(selectedSource, externalLabel, link, last, nowMs)
+        // An external fix the selection core does not attribute to the selected, connected receiver (e.g. receiver
+        // A's last fix while switching to B) is not shown: never a new receiver's name with the old receiver's fix.
+        val unattributed = fix != null && live != null && selectedSource != LocationSourceType.INTERNAL &&
+            (fix.provider == Provider.EXTERNAL_TCP || fix.provider == Provider.EXTERNAL_BT) && live.kind != LiveSourceKind.EXTERNAL
+        if (fix == null || unattributed) {
+            val s = noFix(selectedSource, externalLabel, link, last, nowMs, live?.transition)
             return ToolbarMapResult.Render(if (replayActive) replay(s).copy(fixText = "No fix", isStale = false) else s)
         }
         if (!fixMatchesSource(selectedSource, fix)) return ToolbarMapResult.Ignore("wrong-provider")
@@ -329,7 +390,7 @@ object GnssToolbarStateMapper {
         if (hAcc != null && hAcc in 0.0..9999.0) {
             accuracyCompactText = (if (estimated) "~" else "") + GnssStatusFormatter.formatAccuracyMeters(hAcc)
             accuracyText = if (vAcc != null) GnssStatusFormatter.formatHorizontalVerticalAccuracy(hAcc, vAcc) else accuracyCompactText
-            accuracyLevel = accuracyLevel(hAcc, isInternal = selectedSource == LocationSourceType.INTERNAL)
+            accuracyLevel = accuracyLevel(hAcc, isInternal = selectedSource == LocationSourceType.INTERNAL, estimated = estimated)
         } else {
             accuracyText = null
             accuracyCompactText = null
@@ -372,17 +433,36 @@ object GnssToolbarStateMapper {
         val isReplay = fix.provider == Provider.REPLAY || replayActive
 
         // --- CORRECTION AGE (external receivers only) ---
-        // TODO(colour update): grade the age — e.g. good < 2 s, warn < 5 s, bad at the capture gate
-        // (AveragingPolicy.maxDiffAgeSec). Plain value colour for now.
+        // Exact value for the GNSS Status report only: the compact toolbar shows correction HEALTH (aging / stale /
+        // unavailable, with hysteresis) instead of a value that changes every second.
         val correctionAgeText = fix.diffAgeS
             ?.takeIf { !isInternal && !isReplay && it.isFinite() && it >= 0.0 }
             ?.let { GnssStatusFormatter.formatAgeSeconds(it) }
+
+        // --- SHARED INTERPRETATION (live external fix only; device GNSS and replay are informational, like Home) ---
+        val interp = if (!isInternal && !isReplay) GnssStatusInterpreter.interpret(GnssStatusInterpreter.Inputs(
+            rtkStatus = fix.rtkStatus,
+            hAccM = hAcc,
+            hAccEstimated = estimated,
+            corrections = correctionHealth,
+            reference = reference,
+            // Same rule as the Home card (the receiver's vAcc is an invalid marker).
+            vAccInvalid = io.github.pennstatecs.geokit.gnss.accuracy.VerticalAccuracyValidity.classify(fix.vAccM) ==
+                io.github.pennstatecs.geokit.gnss.accuracy.VerticalAccuracyStatus.INVALID,
+        )) else null
+        // RTK Fix is green only when the shared interpretation is GOOD with no warning at all (reported hAcc within
+        // the high-accuracy target); a fix with a warning or an unverified / below-target accuracy reads amber.
+        val shownFixLevel = when {
+            interp == null -> fixLevel
+            fix.rtkStatus == RtkStatus.FIX -> if (interp.isGood) GnssStatusLevel.SUCCESS else GnssStatusLevel.WARNING
+            else -> fixLevel
+        }
 
         return ToolbarMapResult.Render(
             GnssToolbarState(
                 sourceText = if (isReplay) REPLAY_LABEL else GnssStatusFormatter.formatSource(isInternal, externalLabel),
                 fixText = fixText,
-                fixLevel = fixLevel,
+                fixLevel = shownFixLevel,
                 satelliteText = satelliteText,
                 accuracyText = accuracyText,
                 accuracyLevel = accuracyLevel,
@@ -402,6 +482,10 @@ object GnssToolbarStateMapper {
                 fixDescription = fixDescription(fix.rtkStatus, isInternal),
                 satsDescription = if (satelliteText != null) satsDescription(used, vis) else null,
                 accuracyDescription = if (accuracyText != null && hAcc != null) accuracyDescription(hAcc, estimated, vAcc) else null,
+                accuracyHDescription = if (accuracyText != null && hAcc != null) accuracyDescription(hAcc, estimated) else null,
+                warnings = interp?.warnings.orEmpty(),
+                quality = interp?.quality,
+                correctionHealth = if (interp != null) correctionHealth else CorrectionHealth.OK,
                 ageDescription = correctionAgeText?.let { ageDescription(fix.diffAgeS!!) },
                 coordDescription = (if (coordLabel == "NE") "Grid position " else "Position ") + latLonText.replace(" · ", ", "),
                 altitudeDescription = when {

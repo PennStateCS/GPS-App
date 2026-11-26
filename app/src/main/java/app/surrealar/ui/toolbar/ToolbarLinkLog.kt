@@ -25,7 +25,8 @@ object ToolbarLinkLog {
     fun classify(s: GnssToolbarState): Link = when {
         s.isStale -> Link.LOST
         s.fixText.startsWith("No data") -> Link.STALE
-        s.fixText.startsWith("Connecting") -> Link.CONNECTING
+        s.fixText.startsWith("Connecting") || s.fixText.startsWith("Reconnecting") ||
+            s.fixText.startsWith("Switching") || s.fixText == "Not connected" -> Link.CONNECTING
         s.fixText == "Location off" -> Link.LOCATION_OFF
         s.fixText == "No fix" || s.latLonText == "--" -> Link.NO_FIX
         else -> Link.CONNECTED

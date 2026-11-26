@@ -232,6 +232,11 @@ class AddCoordinateDialogFragment(
         btnRestart        = view.findViewById(R.id.btn_restart_capture)
         tvPositionReference = view.findViewById(R.id.text_position_reference)
 
+        // GNSS Status report over the capture dialog (display only: the capture keeps running underneath).
+        view.findViewById<View>(R.id.btn_capture_gnss_status)?.setOnClickListener {
+            (activity as? app.surrealar.ui.toolbar.report.GnssStatusHost)?.openGnssStatusReport()
+        }
+
         // After the app stopped a capture: start a fresh occupation with the same mode and saved rules.
         btnRestart?.setOnClickListener {
             if (!modeResolved) return@setOnClickListener

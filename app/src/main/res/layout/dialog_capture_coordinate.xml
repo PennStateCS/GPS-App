@@ -121,6 +121,16 @@
                     android:text="Loading capture rules…"
                     android:textAppearance="?attr/textAppearanceBodySmall" />
 
+                <!-- Opens the GNSS Status report over this dialog (the global toolbar is behind the modal dialog). -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_capture_gnss_status"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:paddingStart="0dp"
+                    android:text="@string/gnss_report_title" />
+
                 <!-- RS4 / RS4 Pro: what the averaged positions are (antenna / receiver pole tip / uncertain) -->
                 <TextView
                     android:id="@+id/text_position_reference"

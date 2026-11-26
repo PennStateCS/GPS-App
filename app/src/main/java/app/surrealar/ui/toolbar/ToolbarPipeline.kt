@@ -2,6 +2,14 @@ package app.surrealar.ui.toolbar
 
 import app.surrealar.coords.ConvertedPosition
 import app.surrealar.domain.model.LocationSourceType
+import app.surrealar.gnss.status.CorrectionHealth
+import app.surrealar.gnss.status.CorrectionHealthTracker
+import app.surrealar.gnss.status.GnssStatusInterpreter
+import app.surrealar.receiver.selection.SourceTransition
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.capture.resolvePolicy
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import app.surrealar.settings.model.CoordinateSystemSettings
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.SkySnapshot
@@ -36,7 +44,39 @@ data class ToolbarInputs(
     val preferLatLon: Boolean = false,
     /** The active provider is NMEA replay. */
     val replayActive: Boolean = false,
-)
+    /** The selection core's live source (kind + transition); null = provider-based rules only. */
+    val live: ToolbarLiveSource? = null,
+    /** RS4 / RS4 Pro position reference from the tilt monitor; null = not applicable. */
+    val reference: GnssStatusInterpreter.Reference? = null,
+    /**
+     * "Corrections aging" threshold (s): the active capture policy's `maxDiffAgeSec` (external receiver), so the
+     * toolbar warns exactly when capture would start rejecting fixes for old corrections.
+     */
+    val correctionAgingS: Double = DEFAULT_CORRECTION_AGING_S,
+) {
+    companion object {
+        /** The default capture settings' external `maxDiffAgeSec` (10 s), until the settings load. */
+        val DEFAULT_CORRECTION_AGING_S: Double =
+            io.github.pennstatecs.geokit.gnss.capture.GnssCaptureSettings().toolbarAgingThresholdS()
+    }
+
+    /** A live fix from the selected external receiver that the selection core attributes to it (not replay). */
+    val liveExternalFix: Boolean
+        get() {
+            val f = fix ?: return false
+            return source != LocationSourceType.INTERNAL && !replayActive &&
+                (f.provider == io.github.pennstatecs.geokit.gnss.model.Provider.EXTERNAL_TCP ||
+                    f.provider == io.github.pennstatecs.geokit.gnss.model.Provider.EXTERNAL_BT) &&
+                (live == null || live.kind == app.surrealar.receiver.selection.LiveSourceKind.EXTERNAL)
+        }
+}
+
+/**
+ * The toolbar's "Corrections aging" threshold (s): the external-receiver capture policy's correction-age limit
+ * (`maxDiffAgeSec` of the selected preset, or of Custom), i.e. the age above which a capture stops accepting fixes.
+ */
+fun io.github.pennstatecs.geokit.gnss.capture.GnssCaptureSettings.toolbarAgingThresholdS(): Double =
+    resolvePolicy(internal = false).maxDiffAgeSec.toDouble()
 
 /** One toolbar update: the inputs it came from, the converted position, and what to show. */
 data class ToolbarFrame(
@@ -69,35 +109,62 @@ object ToolbarPipeline {
         computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
         /** Monotonic clock (ms) for link and last-fix ages. */
         nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
-    ): Flow<ToolbarFrame> =
-        inputs
+    ): Flow<ToolbarFrame> = flow {
+        // Correction-health hysteresis is the only state besides the last-fix memory; one per collection, so it
+        // runs on the compute dispatcher with the mapper (never on Main) and never across collectors.
+        val health = CorrectionHealthStage()
+        emitAll(inputs
             .sample(refreshMs)
             .runningFold(Step(null, null)) { prev, i ->
                 val now = nowMs()
                 // A conversion failure only drops the converted display (lat/lon + MSL is shown instead).
                 val coords = i.fix?.let { runCatching { convert(it, i.coordSettings) }.getOrNull() }
                 val memory = prev.memory.next(i, coords, now)
+                val corrections = health.update(i, now)
                 val result = GnssToolbarStateMapper.map(
-                    i.source, i.fix, i.sky, i.externalLabel, coords, i.link, memory?.last, now, i.preferLatLon, i.replayActive)
+                    i.source, i.fix, i.sky, i.externalLabel, coords, i.link, memory?.last, now, i.preferLatLon, i.replayActive,
+                    correctionHealth = corrections, reference = i.reference.takeIf { i.source != LocationSourceType.INTERNAL },
+                    live = i.live)
                 Step(memory, ToolbarFrame(i, coords, result))
             }
-            .mapNotNull { it.frame }
-            .flowOn(computeDispatcher)
+            .mapNotNull { it.frame })
+    }.flowOn(computeDispatcher)
 
     private data class Step(val memory: FixMemory?, val frame: ToolbarFrame?)
 
     /**
+     * Owns the [CorrectionHealthTracker] for one pipeline collection: recreated when the aging threshold (capture
+     * setting) changes, reset when the selected source or receiver changes or a receiver switch starts.
+     */
+    internal class CorrectionHealthStage {
+        private var tracker: CorrectionHealthTracker? = null
+        private var key: String? = null
+
+        fun update(i: ToolbarInputs, now: Long): CorrectionHealth {
+            val t = tracker?.takeIf { it.agingS == i.correctionAgingS.coerceAtMost(it.staleS) }
+                ?: CorrectionHealthTracker(i.correctionAgingS).also { tracker = it }
+            val k = "${i.source}|${i.receiverKey}"
+            if (k != key || i.live?.transition is SourceTransition.Switching) { t.reset(); key = k }
+            val fix = i.fix
+            return t.update(i.liveExternalFix, fix?.diffAgeS, fix?.rtkStatus ?: RtkStatus.NONE, now)
+        }
+    }
+
+    /**
      * The last fix shown, tied to the source and receiver it came from. Forgotten when the selected
-     * source or the receiver changes, so a lost-link display never shows another provider's position.
-     * Replay fixes are never remembered.
+     * source or the receiver changes, or a receiver switch starts, so a lost-link display never shows another
+     * provider's (or another receiver's) position. Replay fixes and external fixes the selection core does not
+     * attribute to the selected receiver are never remembered.
      */
     internal data class FixMemory(val source: LocationSourceType, val receiverKey: String, val last: LastFix)
 
     internal fun FixMemory?.next(i: ToolbarInputs, coords: ConvertedPosition?, now: Long): FixMemory? {
-        val kept = this?.takeIf { it.source == i.source && it.receiverKey == i.receiverKey }
+        val kept = this?.takeIf { it.source == i.source && it.receiverKey == i.receiverKey &&
+            i.live?.transition !is SourceTransition.Switching }
         val fix = i.fix ?: return kept
         if (fix.provider == io.github.pennstatecs.geokit.gnss.model.Provider.REPLAY) return kept
         if (!GnssToolbarStateMapper.fixMatchesSource(i.source, fix)) return kept
+        if (i.source != LocationSourceType.INTERNAL && !i.liveExternalFix) return kept
         return FixMemory(i.source, i.receiverKey, LastFix(fix, now, coords))
     }
 

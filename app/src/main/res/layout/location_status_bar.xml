@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Compact GNSS toolbar (docs/gnss-toolbar.md). One line: LEFT group anchored left, RIGHT group anchored right,
+    flexible space between. Tapping anywhere opens the GNSS Status report, except the coordinates, which toggle
+    lat/lon <-> grid when a grid system is configured. Narrow widths: GnssToolbarRenderer / ToolbarPriority.
+-->
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -6,12 +11,15 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="@color/app_status_strip"
+    android:clickable="true"
+    android:focusable="false"
+    android:importantForAccessibility="no"
     android:paddingStart="10dp"
-    android:paddingEnd="10dp"
+    android:paddingEnd="4dp"
     android:paddingTop="0dp"
     android:paddingBottom="0dp">
 
-    <!-- LEFT GROUP: Source + Status + Sats + Accuracy + Correction age (left-aligned) -->
+    <!-- LEFT GROUP: Source + Solution + Horizontal accuracy + Warning + Low battery (left-aligned) -->
     <include
         android:id="@+id/token_source"
         layout="@layout/item_token" />
@@ -19,20 +27,20 @@
         android:id="@+id/token_fix"
         layout="@layout/item_token" />
     <include
-        android:id="@+id/token_sats"
-        layout="@layout/item_token" />
-    <include
         android:id="@+id/token_acc"
         layout="@layout/item_token" />
     <include
-        android:id="@+id/token_age"
+        android:id="@+id/token_warn"
+        layout="@layout/item_token" />
+    <include
+        android:id="@+id/token_batt"
         layout="@layout/item_token" />
 
     <androidx.constraintlayout.helper.widget.Flow
         android:id="@+id/flow_left"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        app:constraint_referenced_ids="token_source,token_fix,token_sats,token_acc,token_age"
+        app:constraint_referenced_ids="token_source,token_fix,token_acc,token_warn,token_batt"
         app:flow_wrapMode="none"
         app:flow_horizontalGap="0dp"
         app:flow_horizontalStyle="packed"
@@ -44,22 +52,33 @@
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent" />
 
-    <!-- RIGHT GROUP: LL + ALT + BATT (right-aligned) -->
+    <!-- RIGHT GROUP: Coordinates + Elevation (height reference) + chevron (right-aligned) -->
     <include
         android:id="@+id/token_coord"
         layout="@layout/item_token" />
     <include
         android:id="@+id/token_alt"
         layout="@layout/item_token" />
-    <include
-        android:id="@+id/token_batt"
-        layout="@layout/item_token" />
+
+    <ImageView
+        android:id="@+id/toolbar_chevron"
+        android:layout_width="36dp"
+        android:layout_height="48dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:focusable="true"
+        android:importantForAccessibility="yes"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:scaleType="center"
+        android:src="@drawable/ic_expand_more"
+        app:tint="@color/app_on_status_strip_variant"
+        android:contentDescription="@string/gnss_toolbar_open_report_cd" />
 
     <androidx.constraintlayout.helper.widget.Flow
         android:id="@+id/flow_right"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        app:constraint_referenced_ids="token_coord,token_alt,token_batt"
+        app:constraint_referenced_ids="token_coord,token_alt,toolbar_chevron"
         app:flow_wrapMode="none"
         app:flow_horizontalGap="0dp"
         app:flow_horizontalStyle="packed"

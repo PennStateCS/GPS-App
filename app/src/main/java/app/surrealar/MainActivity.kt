@@ -36,6 +36,7 @@ import app.surrealar.ui.toolbar.ToolbarFrame
 import app.surrealar.ui.toolbar.ToolbarInputs
 import app.surrealar.ui.toolbar.ToolbarPipeline
 import app.surrealar.ui.toolbar.ToolbarPipeline.retryForever
+import app.surrealar.ui.toolbar.toolbarAgingThresholdS
 import app.surrealar.ui.toolbar.ToolbarMapResult
 import app.surrealar.ui.navigation.topLevelNavOptions
 import app.surrealar.service.LocationService
@@ -73,7 +74,7 @@ private const val NAV_DRAWER_CLOSE_DELAY_MS = 120L
  * foreground [LocationService]/permission prompts around them.
  */
 @AndroidEntryPoint
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), app.surrealar.ui.toolbar.report.GnssStatusHost {
 
     private lateinit var appBarConfiguration: AppBarConfiguration
     private lateinit var binding: ActivityMainBinding
@@ -107,6 +108,8 @@ class MainActivity : AppCompatActivity() {
      * starts with the app, and its one-off notices reach the user on any screen.
      */
     @Inject lateinit var receiverConnection: app.surrealar.receiver.selection.ReceiverConnectionController
+    /** RS4 / RS4 Pro tilt + position reference (the toolbar warns when the reference is unconfirmed, like Home). */
+    @Inject lateinit var tiltMonitor: app.surrealar.receiver.tilt.ReceiverTiltMonitor
 
     // Replay controller for NMEA playback
     /** Provider active before replay started, restored when replay stops (null = not replaying). */
@@ -115,11 +118,13 @@ class MainActivity : AppCompatActivity() {
     // Token view holder for status bar (ToolbarTokens lives in ui.toolbar, shared with the renderer)
     private lateinit var tokenSource: ToolbarTokens
     private lateinit var tokenFix: ToolbarTokens
-    private lateinit var tokenSats: ToolbarTokens
     private lateinit var tokenAcc: ToolbarTokens
-    private lateinit var tokenAge: ToolbarTokens
+    private lateinit var tokenWarn: ToolbarTokens
     /** Toolbar-only display override from tapping LL/NE (doesn't change Settings). */
     private val toolbarPreferLatLon = MutableStateFlow(false)
+    /** The toolbar's latest rendered frame, shared with the GNSS Status report (no second pipeline). */
+    private val toolbarFrames = MutableStateFlow<ToolbarFrame?>(null)
+    override val gnssToolbarFrames: kotlinx.coroutines.flow.StateFlow<ToolbarFrame?> get() = toolbarFrames
     /** Last state the toolbar rendered (tap actions read it; decisions stay in the mapper). */
     private var lastToolbarState: app.surrealar.ui.toolbar.GnssToolbarState? = null
     private lateinit var tokenCoord: ToolbarTokens
@@ -201,17 +206,16 @@ class MainActivity : AppCompatActivity() {
         // Bind token views from included layout
         tokenSource = findToken(R.id.token_source)
         tokenFix    = findToken(R.id.token_fix)
-        tokenSats   = findToken(R.id.token_sats)
         tokenAcc    = findToken(R.id.token_acc)
-        tokenAge    = findToken(R.id.token_age)
+        tokenWarn   = findToken(R.id.token_warn)
         tokenCoord  = findToken(R.id.token_coord)
         tokenAlt    = findToken(R.id.token_alt)
         tokenBatt   = findToken(R.id.token_batt)
 
         // View-only toolbar renderer. Color resolution and battery-polling lifecycle stay here.
         toolbarRenderer = GnssToolbarRenderer(
-            source = tokenSource, fix = tokenFix, sats = tokenSats, acc = tokenAcc, age = tokenAge,
-            coord = tokenCoord, alt = tokenAlt, batt = tokenBatt,
+            source = tokenSource, fix = tokenFix, acc = tokenAcc, warn = tokenWarn,
+            coord = tokenCoord, alt = tokenAlt, batt = tokenBatt, chevron = findViewById(R.id.toolbar_chevron),
             colorFor = ::levelColor,
             onBatteryVisibilityChanged = ::updateBatteryVisibility,
             strip = findViewById(R.id.location_status_bar),
@@ -651,10 +655,22 @@ class MainActivity : AppCompatActivity() {
                     externalLabelFlow(),
                 ) { fix, sky, source, coordSettings, label -> ToolbarInputs(source, fix, sky, coordSettings, label) }
                 val replayActive = sourceSettings.activeProvider.map { it == app.surrealar.gnss.source.SourceSettings.ProviderChoice.REPLAY }
+                // Status context for the shared interpretation, each distinct-until-changed so none re-emits per fix:
+                // the selection core's live source (kind + transition), the RS4 position reference, and the capture
+                // policy's correction-age limit ("Corrections aging").
+                val status = combine(
+                    receiverConnection.liveSource.map { app.surrealar.ui.toolbar.ToolbarLiveSource.of(it) }.distinctUntilChanged(),
+                    tiltMonitor.status.map {
+                        app.surrealar.gnss.status.GnssStatusInterpreter.referenceOf(it.applicable, it.reference, it.compensatedOutput)
+                    }.distinctUntilChanged(),
+                    settingsRepository.gnssCaptureSettings.map { it.toolbarAgingThresholdS() }
+                        .onStart { emit(ToolbarInputs.DEFAULT_CORRECTION_AGING_S) }.distinctUntilChanged(),
+                ) { live, ref, aging -> Triple(live, ref, aging) }
                 val inputs = combine(gnss, toolbarLinkFlow(), toolbarTickFlow(), receiverKeyFlow(),
-                    combine(toolbarPreferLatLon, replayActive) { ll, rp -> ll to rp }) { g, link, tick, key, opts ->
+                    combine(toolbarPreferLatLon, replayActive, status) { ll, rp, st -> Triple(ll, rp, st) }) { g, link, tick, key, opts ->
                     g.copy(link = link.copy(locationEnabled = tick.second), receiverKey = key, tick = tick.first,
-                        preferLatLon = opts.first, replayActive = opts.second)
+                        preferLatLon = opts.first, replayActive = opts.second,
+                        live = opts.third.first, reference = opts.third.second, correctionAgingS = opts.third.third)
                 }
                 ToolbarPipeline.frames(inputs, coordinateSystemService::convertFix,
                     nowMs = { android.os.SystemClock.elapsedRealtime() })
@@ -762,6 +778,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 lastToolbarState = state
+                toolbarFrames.value = frame
                 toolbarRenderer.render(state)
             }
         }
@@ -807,20 +824,32 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupToolbarActions() {
         toolbarRenderer.bindActions(app.surrealar.ui.toolbar.ToolbarActions(
-            onStatus = ::openToolbarGnssStatus,
-            onBattery = ::openReceiverDetails,
-            // Lat/lon ↔ grid only when a grid system is configured; otherwise a no-op.
-            onCoordTap = { if (lastToolbarState?.coordToggleAvailable == true) toolbarPreferLatLon.value = !toolbarPreferLatLon.value },
+            onOpenReport = ::openGnssStatusReport,
+            // Lat/lon ↔ grid when a grid system is configured (unchanged); otherwise the coordinates open the report too.
+            onCoordTap = {
+                if (app.surrealar.ui.toolbar.ToolbarTapRules.coordTapToggles(lastToolbarState)) toggleToolbarCoordinates()
+                else openGnssStatusReport()
+            },
             onCoordLongPress = ::copyToolbarPosition,
         ))
     }
 
-    /** SOL / SATS: the sky + satellite view (Developer Tools) when enabled, else Settings › Receiver status. */
-    /** Solution / satellites tap: Settings › Receiver. (It opened the Developer page when developer tools were on; removed for now.) */
-    private fun openToolbarGnssStatus() = openReceiverDetails()
+    /** Lat/lon ↔ grid in the toolbar only (Settings unchanged); also the report's "Show lat/lon / grid" button. */
+    override fun toggleToolbarCoordinates() {
+        if (lastToolbarState?.coordToggleAvailable == true) toolbarPreferLatLon.value = !toolbarPreferLatLon.value
+    }
 
-    /** Battery: Settings › Receiver (status, battery, device info). Also the capture dialog's "Open receiver settings". */
-    internal fun openReceiverDetails() = navigateFromToolbar(
+    /** The GNSS Status report (bottom sheet over the current screen; one at a time). */
+    override fun openGnssStatusReport() {
+        runCatching {
+            val fm = supportFragmentManager
+            if (fm.isStateSaved || fm.findFragmentByTag(app.surrealar.ui.toolbar.report.GnssStatusSheet.TAG) != null) return
+            app.surrealar.ui.toolbar.report.GnssStatusSheet().show(fm, app.surrealar.ui.toolbar.report.GnssStatusSheet.TAG)
+        }.onFailure { DiagnosticsLogger.w(DiagTags.NAV, "GNSS status report could not open", it) }
+    }
+
+    /** Settings › Receiver (status, battery, device info): the report's "Receiver settings" and the capture dialog. */
+    override fun openReceiverDetails() = navigateFromToolbar(
         R.id.nav_settings,
         androidx.core.os.bundleOf(app.surrealar.ui.settings.SettingsFragment.ARG_INITIAL_CATEGORY_ID to
             app.surrealar.ui.settings.SettingsFragment.CATEGORY_RECEIVER),

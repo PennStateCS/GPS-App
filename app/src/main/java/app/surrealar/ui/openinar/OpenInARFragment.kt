@@ -815,6 +815,17 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 .onFailure { DiagnosticsLogger.w(DIAG, "AR exit navigation failed", it) }
         }
 
+        // AR hides the global GNSS toolbar; its GNSS chip opens the same GNSS Status report instead (a plain tap on
+        // the chip only, so it never competes with AR gestures on the camera view).
+        binding.chipArGnssStatus.apply {
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { (activity as? app.surrealar.ui.toolbar.report.GnssStatusHost)?.openGnssStatusReport() }
+            androidx.core.view.ViewCompat.replaceAccessibilityAction(this,
+                androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_CLICK,
+                getString(R.string.gnss_toolbar_open_report_action), null)
+        }
+
         // Toolbar toggle — show/hide with a slide-in animation from the right edge (UI chrome, not logged).
         binding.btnToolbarToggle.setOnClickListener {
             if (toolbarVisible) hideToolbar() else showToolbar()

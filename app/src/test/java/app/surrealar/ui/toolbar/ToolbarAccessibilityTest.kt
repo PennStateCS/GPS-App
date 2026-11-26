@@ -59,7 +59,7 @@ class ToolbarAccessibilityTest {
             m.noFix(LocationSourceType.INTERNAL, "RS2+", ToolbarLinkInputs(locationEnabled = false), null, 0).fixDescription)
         val lost = m.noFix(LocationSourceType.EXTERNAL, "RS2+", ToolbarLinkInputs(ExternalLinkPhase.CONNECTING),
             LastFix(fix(RtkStatus.FIX, 0.01), atMs = 0L, coords = null), nowMs = 12_000)
-        assertEquals("Position lost 12 seconds ago, showing the last position", lost.fixDescription)
+        assertEquals("Position lost 12 seconds ago, showing the last position. Not for capture", lost.fixDescription)
         assertEquals("Last known position 41.234567, -76.123456", lost.coordDescription)
         assertNull(lost.accuracyDescription); assertNull(lost.satsDescription)
         assertEquals("Position not available", m.waiting(LocationSourceType.EXTERNAL, "RS2+").coordDescription)

@@ -222,4 +222,11 @@
     <color name="chart_bar_weak">@color/status_no_fix</color>
     <color name="chart_bar_unused">#9E9E9E</color>
 
+    <!-- Compact GNSS toolbar warning pill (on the navy strip, both themes): icon + text on a filled pill.
+         critical = red / white (5.9:1), caution = amber / near-black (10:1). -->
+    <color name="gnss_toolbar_warning_critical_bg">#C62828</color>
+    <color name="gnss_toolbar_warning_critical_fg">#FFFFFF</color>
+    <color name="gnss_toolbar_warning_caution_bg">#FFB300</color>
+    <color name="gnss_toolbar_warning_caution_fg">#1A1A1A</color>
+
 </resources>
