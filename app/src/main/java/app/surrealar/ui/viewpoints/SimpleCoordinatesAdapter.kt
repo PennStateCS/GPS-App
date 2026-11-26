@@ -244,7 +244,7 @@ class SimpleCoordinatesAdapter(
             val fg = MaterialColors.getColor(ctx,
                 com.google.android.material.R.attr.colorOnPrimaryContainer, Color.BLACK)
             holder.name.setTextColor(fg)
-            holder.coords.setTextColor(fg and 0x00FFFFFF or (0xB2 shl 24))
+            holder.coords.setTextColor(androidx.core.graphics.ColorUtils.setAlphaComponent(fg, 0xB2))
         } else {
             rowRoot?.setBackgroundColor(Color.TRANSPARENT)
             val tv = TypedValue()

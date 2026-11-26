@@ -206,13 +206,27 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Actions: "Change receiver" sized to its label (not full width), "Receiver details" beside it. -->
-        <LinearLayout
+        <!-- Actions: "Change receiver" sized to its label (not full width), "Receiver details" beside it,
+             "Retry" (when shown) after them. A wrapping Flow: at large font scales a button that no longer fits
+             moves to the next line instead of squeezing "Receiver details" until a word splits. -->
+        <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:layout_marginTop="12dp">
+
+            <androidx.constraintlayout.helper.widget.Flow
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                app:constraint_referenced_ids="btn_change_receiver,btn_receiver_details,btn_retry_receiver"
+                app:flow_wrapMode="chain"
+                app:flow_horizontalStyle="packed"
+                app:flow_horizontalBias="0"
+                app:flow_horizontalGap="8dp"
+                app:flow_verticalGap="4dp"
+                app:flow_verticalAlign="center"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_change_receiver"
@@ -227,14 +241,8 @@
                 style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
                 android:minHeight="48dp"
                 android:text="@string/receiver_details" />
-
-            <Space
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:layout_weight="1" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_retry_receiver"
@@ -244,6 +252,6 @@
                 android:minHeight="48dp"
                 android:text="@string/receiver_retry"
                 android:visibility="gone" />
-        </LinearLayout>
+        </androidx.constraintlayout.widget.ConstraintLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

@@ -229,7 +229,7 @@
                     android:textColor="?attr/colorPrimary" />
 
                 <!-- Scannable Latitude / Longitude / Altitude tiles (populated dynamically). -->
-                <LinearLayout
+                <app.surrealar.ui.components.AdaptiveTileRow
                     android:id="@+id/location_tiles"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -388,7 +388,7 @@
                     android:textColor="?attr/colorPrimary" />
 
                 <!-- Scannable quality tiles (Fix / H Acc / V Acc / Sats); populated dynamically. -->
-                <LinearLayout
+                <app.surrealar.ui.components.AdaptiveTileRow
                     android:id="@+id/gnss_tiles"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

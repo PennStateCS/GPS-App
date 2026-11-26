@@ -153,6 +153,7 @@
                     android:layout_weight="1"
                     android:text="Visible 0 / 0"
                     android:textAppearance="?attr/textAppearanceLabelMedium"
+                    android:fontFeatureSettings="tnum"
                     android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <com.google.android.material.button.MaterialButton
@@ -352,7 +353,9 @@
             <!-- Type (map type / layers) -->
             <LinearLayout
                 android:id="@+id/btnMapType"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
+                android:minWidth="72dp"
+                android:layout_gravity="center_horizontal"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:gravity="center"
@@ -385,7 +388,9 @@
             <!-- My Location (toggle current-location display on the map) -->
             <LinearLayout
                 android:id="@+id/btnMapMyLocation"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
+                android:minWidth="72dp"
+                android:layout_gravity="center_horizontal"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:gravity="center"
@@ -417,7 +422,9 @@
             <!-- Center (recenter the map on the current position) -->
             <LinearLayout
                 android:id="@+id/btnMapCenter"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
+                android:minWidth="72dp"
+                android:layout_gravity="center_horizontal"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:gravity="center"
@@ -449,7 +456,9 @@
             <!-- Grid (toggle coordinate grid) -->
             <LinearLayout
                 android:id="@+id/btnMapGrid"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
+                android:minWidth="72dp"
+                android:layout_gravity="center_horizontal"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:gravity="center"
@@ -482,7 +491,9 @@
             <!-- Labels (cycle point label mode: Off → Name → Elevation → Distance) -->
             <LinearLayout
                 android:id="@+id/btnMapLabels"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
+                android:minWidth="72dp"
+                android:layout_gravity="center_horizontal"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:gravity="center"
@@ -515,7 +526,9 @@
             <!-- Fit visible coordinates -->
             <LinearLayout
                 android:id="@+id/btnMapFit"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
+                android:minWidth="72dp"
+                android:layout_gravity="center_horizontal"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:gravity="center"
@@ -851,7 +864,9 @@
                     android:text="Stakeout Target"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
                     android:textColor="?attr/colorPrimary"
-                    android:textStyle="bold" />
+                    android:textStyle="bold"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_clear_stakeout"

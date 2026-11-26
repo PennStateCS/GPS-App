@@ -293,13 +293,14 @@ class SatelliteSignalChartView @JvmOverloads constructor(
         )
         var x = chartLeft
         val baselineY = centerY + textPaint.textSize / 3f
-        items.forEach { (text, color) ->
+        for ((text, color) in items) {
+            // Stop before an item that would run past the right edge (12 sp labels no longer all fit on a phone).
+            if (x + legendBoxSize + dp(6f) + textPaint.measureText(text) > chartRight) break
             barPaint.color = color
             canvas.drawRect(x, centerY - legendBoxSize / 2f, x + legendBoxSize, centerY + legendBoxSize / 2f, barPaint)
             x += legendBoxSize + dp(6f)
             canvas.drawText(text, x, baselineY, textPaint)
             x += textPaint.measureText(text) + legendItemGap
-            if (x > chartRight - legendBoxSize) return@forEach
         }
     }
 

@@ -242,7 +242,9 @@
             <!-- Reanchor -->
             <LinearLayout
                 android:id="@+id/btnReanchor"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
+                android:minWidth="72dp"
+                android:layout_gravity="center_horizontal"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:gravity="center"
@@ -273,7 +275,9 @@
             <!-- Test Points -->
             <LinearLayout
                 android:id="@+id/btnSpawnTestPoints"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
+                android:minWidth="72dp"
+                android:layout_gravity="center_horizontal"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:gravity="center"
@@ -303,7 +307,9 @@
             <!-- Test cube: a temporary model in front of the user, for trying Move model -->
             <LinearLayout
                 android:id="@+id/btnTestCube"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
+                android:minWidth="72dp"
+                android:layout_gravity="center_horizontal"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:gravity="center"
@@ -336,7 +342,9 @@
             <!-- Distance Filter -->
             <LinearLayout
                 android:id="@+id/btnDistanceFilter"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
+                android:minWidth="72dp"
+                android:layout_gravity="center_horizontal"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:gravity="center"
@@ -368,7 +376,9 @@
             <!-- Altitude Mode -->
             <LinearLayout
                 android:id="@+id/btnAltitudeMode"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
+                android:minWidth="72dp"
+                android:layout_gravity="center_horizontal"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:gravity="center"
@@ -407,7 +417,9 @@
 
                 <LinearLayout
                     android:id="@+id/btnToggleOcclusion"
-                    android:layout_width="match_parent"
+                    android:layout_width="wrap_content"
+                    android:minWidth="72dp"
+                    android:layout_gravity="center_horizontal"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:gravity="center"
@@ -449,7 +461,9 @@
                 <!-- Planes toggle -->
                 <LinearLayout
                     android:id="@+id/btnTogglePlanes"
-                    android:layout_width="match_parent"
+                    android:layout_width="wrap_content"
+                    android:minWidth="72dp"
+                    android:layout_gravity="center_horizontal"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:gravity="center"
@@ -482,7 +496,9 @@
                 <!-- Point cloud toggle -->
                 <LinearLayout
                     android:id="@+id/btnTogglePointCloud"
-                    android:layout_width="match_parent"
+                    android:layout_width="wrap_content"
+                    android:minWidth="72dp"
+                    android:layout_gravity="center_horizontal"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:gravity="center"
@@ -527,7 +543,9 @@
                 <!-- Debug Overlay toggle -->
                 <LinearLayout
                     android:id="@+id/btnToggleDebugOverlay"
-                    android:layout_width="match_parent"
+                    android:layout_width="wrap_content"
+                    android:minWidth="72dp"
+                    android:layout_gravity="center_horizontal"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:gravity="center"
