@@ -2,7 +2,9 @@
 
 How colour and text are chosen in the app, what is enforced by tests, and how to add new UI. Phase 1
 (`feature/visual-p1`) built the system and fixed the core theme-bypassing components; phase 2 applies it to the
-remaining screens using the [Audit](#audit) list as its work queue.
+remaining screens (`feature/visual-p2`): badges / status text / charts / AR and map overlays on semantic or named
+roles, the remaining raw text sizes on the type scale, layout fixes for 1.3x / 1.5x font scale, and a Kotlin colour
+guard. The [Audit](#audit) records what was done and the [intentional exceptions](#intentional-exceptions).
 
 Scope is visual only: no GNSS, capture, coordinate, database, AR-rendering, receiver or navigation logic changes.
 
@@ -96,8 +98,8 @@ Warning pills stay **filled** (distinct from the coloured status text):
 - **Model viewer canvas**: the Filament skybox/clear colour is a fixed light grey in both themes, so the loading
   overlay is fixed `model_viewer_canvas` `#EEEEEE` and text over it uses `model_viewer_on_canvas` `#1A1C1E`,
   `model_viewer_on_canvas_error` `#BA1A1A` and the spinner `model_viewer_on_canvas_accent` `#1A56A4`.
-- **Map overlays** (`map_overlay_bg`, `TextAppearance.App.Map.*`): near-white panel with dark text; reviewed in
-  phase 2.
+- **Map overlays** (`map_overlay_bg`, `TextAppearance.App.Map.*`): near-white panel with dark text. Map point labels
+  use `map_label_text` on `map_label_bg` (see [Overlay conventions](#overlay-conventions-phase-2)).
 
 Overlay rules: fixed colours are allowed over a camera or map, but only via a named `ar_overlay_*` / `map_*` resource
 or style; they must pass 4.5:1 for text against the scrim composited over the worst-case (white) frame; do not use
@@ -144,10 +146,12 @@ headlines.
    on text; if used, the composite must still pass 4.5:1.
 2. Status: `?attr/colorStatus<Role>` for text/icons/dots on any surface; for a filled badge use
    `colorStatus<Role>Container` + `colorOnStatus<Role>Container`. In Kotlin:
-   `MaterialColors.getColor(view, R.attr.colorStatusWarning)`. Always pair with words or an icon.
+   `MaterialColors.getColor(view, R.attr.colorStatusWarning)`, or from a pure mapper return a `StatusTone`
+   (`ui/theme/StatusTone`) and resolve it in the view with `tone.foreground(view)` / `tone.container(view)` /
+   `tone.onContainer(view)`. Always pair with words or an icon.
 3. Backgrounds: `?attr/colorSurface`, `?android:attr/colorBackground`, `?attr/colorSurfaceContainer*`. Never
    `@android:color/background_light`, `@color/white` or raw hex.
-4. On the GNSS strip: only `toolbar_*` roles. Over the camera: only `ar_overlay_*` roles.
+4. On the GNSS strip: only `toolbar_*` roles. Over the camera: only `ar_overlay_*` roles. Charts: only `chart_*`.
 5. Text size: a `TextAppearance.App.*` style; nothing meaningful below 12 sp; no fixed heights that clip at 1.3×/1.5×
    font scale.
 6. Add a contrast check to `PaletteContrastChecks` for any new colour pair and a row to the allowlist only for a
@@ -164,8 +168,15 @@ headlines.
   `contrast[theme] …` line.
 - `ui/theme/TypeScaleLightTest` / `TypeScaleNightTest` — named styles resolve with the documented sizes and a text
   colour, ≥ 12 sp, tabular figures where required, theme label-small mapped.
-- `ui/theme/HardcodedColorGuardTest` — ratchet: no new raw hex / `@android:color/*` / `@color/white|black` in
-  layouts; the allowlist is the remaining phase-2 layout queue.
+- `ui/theme/HardcodedColorGuardTest` — no raw hex / `@android:color/*` / `@color/white|black` in any layout; Kotlin
+  scanned for `Color.parseColor/rgb/argb`, `toColorInt`, 8-digit `0x…` literals and `android.R.color.*` with an exact
+  allowlist of the documented fixed exceptions.
+- Phase 2 contrast additions (both themes): `StatusTone` resolves to the roles and badge text on its container ≥ 4.5;
+  chart text ≥ 4.5 and axis / series / constellation / halo ≥ 3 on surface and surfaceContainer; AR label pill and
+  AR chip text ≥ 4.5 over a white frame; map label on its halo ≥ 4.5; coordinate-list selection text ≥ 4.5;
+  disabled text (onSurface 38 %, WCAG-exempt) ≥ 2.0 floor.
+- `ui/theme/FontScalePreviewTest` — font scale 1.0 / 1.3 / 1.5 renders + clipping / word-split / touch-target audit
+  (see [Font scaling](#font-scaling)).
 - Previews (`@GraphicsMode(NATIVE)`, PNGs in `app/build/previews/`): `GnssToolbarPreviewTest` (toolbar states,
   GNSS Status report), `ReceiverUiPreviewTest` (Home field status, receiver card / settings), `DesignSystemPreviewTest`
   (palette swatches, type scale, FixBadgeView, legacy Settings layout, model viewer chrome), light and dark.
@@ -197,110 +208,193 @@ headlines.
 | Model viewer spinner, dark theme | `#8FC5FF` 1.56 | `#1A56A4` 6.22 |
 | FixBadgeView "orange" (`holo_orange_dark` on white) | 2.39 | 6.41 |
 | FixBadgeView grey supporting text (`darker_gray`) | 2.23 | ≥ 4.5 (onSurfaceVariant) |
+| **Phase 2** | | |
+| Coordinate badge "sub-metre" (white on `#F9A825`) | 1.97 | on-container on warning container 12.87 (dark 7.32) |
+| Coordinate badge FLOAT / degraded (white on `#E65100` / `#EF6C00`) | 3.79 / 3.08 | ≥ 7.3 (on-container) |
+| Model readiness chip, dark (white on `#81C995`) | 1.96 | 7.82 (success on-container) |
+| Self-test pass / warning (`holo_green_dark` / `holo_orange_dark` on white) | 3.43 / 2.39 | 6.4+ (status roles) |
+| Developer Maps "warn" (`#F9A825` on white) | 1.97 | `#9A4700` 6.41 |
+| Developer DENIED / RTK no-fix on dark card (`#C62828`) | 3.18 | `#FFB4AB` 10.54 |
+| Model card edit / delete icons on dark card (`#0D47A1` / `#B71C1C`) | 2.07 / 2.72 | colorPrimary / colorError ≥ 8 |
+| Stakeout distance in tolerance / near (`#4CAF50` / `#FF9800` on white) | 2.78 / 2.16 | 6.4+ (status roles) |
+| Pin sheet FLOAT (`#2196F3` on white, and blue meant "float") | 3.12 | warning `#9A4700` 6.41 |
+| Chart axis (light) `#BDBDBD` | 1.88 | `#71787E` 4.48 |
+| Chart unused bar (light) `#9E9E9E` | 2.68 | `#757575` 4.61 |
+| Skyplot / SNR-bar amber (light) `#FFC107` | 1.63 | warning `#9A4700` 6.41 |
+| Skyplot constellation strokes (light, e.g. BeiDou `#FFE082`) | 1.29–1.75 | 4.8–8.0 |
+| Coordinate-list placeholder (white on `#BDBDBD`) | 1.88 | onSurfaceVariant on surfaceContainerHighest ≥ 6 |
+| AR label distance line (`#CCCCCC` on pill over white) | 6.36 (9 dp) | 6.36 at 12 sp |
 
 ## Audit
 
-Inventory of theme-bypassing colour and type in `app/src/main` as of `main` 9947ea73. **Phase 1 fixed** items are
-marked ✅; everything else is the phase-2 queue. Classification: **F** = intentional fixed (camera / map / brand
-graphic / data series — keep, but move to a named resource and validate), **T** = should be theme-aware.
+Inventory of theme-bypassing colour and type in `app/src/main` as of `main` 9947ea73, worked in two phases.
+✅ = fixed (phase 1 or 2), **F** = intentional fixed colour (kept, named and validated, see
+[Intentional exceptions](#intentional-exceptions)), **T** = theme-aware. Nothing in the queue is open any more except the
+items under [Remaining / device-only](#remaining--device-only).
 
 ### Layouts: hex / framework colours
 
 | File | Hit | Class | Status |
 |---|---|---|---|
-| `layout/fragment_settings.xml` | `#10111111`, `#08000000`, `@android:color/background_light` (legacy layout, only a `tools:layout` preview) | T | ✅ surface containers |
-| `layout/activity_model_viewer.xml` | `#EEEEEE` loading overlay; white FAB icons on colorPrimary; `?attr/colorOnSurface` / `colorError` text on the fixed grey | F (matches Filament skybox) / T | ✅ named `model_viewer_*`, icons `?attr/colorOnPrimary` |
-| `drawable/bg_rounded_tab_floating.xml` | `@color/white` behind `?attr/colorOnSurface` text (white-on-white in dark) | T | ✅ `?attr/colorSurface` |
-| `layout/item_token.xml` | `@android:color/white` icon tint | F (navy strip) | ✅ `toolbar_on_primary` |
-| `layout/fragment_coordinate_detail.xml` | 4 × `@android:color/white` badge text (fills set in code) | T | phase 2 (on-container roles) |
-| `layout/item_model.xml` | `@android:color/white` badge text on `bg_model_badge` (white fill!) | T | phase 2 |
-| `layout/item_point.xml` | `@android:color/white` icon tile | T | phase 2 |
+| `layout/fragment_settings.xml` | `#10111111`, `#08000000`, `@android:color/background_light` | T | ✅ p1 surface containers |
+| `layout/activity_model_viewer.xml` | `#EEEEEE` loading overlay; white FAB icons | F / T | ✅ p1 `model_viewer_*`, `?attr/colorOnPrimary` |
+| `drawable/bg_rounded_tab_floating.xml` | `@color/white` behind onSurface text | T | ✅ p1 `?attr/colorSurface` |
+| `layout/item_token.xml` | `@android:color/white` icon tint | F (navy strip) | ✅ p1 `toolbar_on_primary` |
+| `layout/fragment_coordinate_detail.xml` | 4 × white badge text | T | ✅ p2 on-container from `StatusTone` (set in code), `StatusLabel`, no bold |
+| `layout/item_model.xml` | white readiness-badge text on `bg_model_badge` | T | ✅ p2 on-container from the verdict tone |
+| `layout/item_point.xml` | `@android:color/white` row background | T | ✅ p2 `?attr/colorSurface` (layout currently unused) |
+
+`HardcodedColorGuardTest` now allows **no** layout hits.
 
 ### Drawables / colour selectors
 
-| File | Hit | Class |
-|---|---|---|
-| `drawable/badge_bg.xml` | `#607D8B` | T → neutral container |
-| `drawable/bg_model_badge.xml` | `#FFFFFFFF` | T |
-| `drawable/bg_rounded_tab.xml` | `@color/white` (unused?) | T / remove |
-| `drawable/thumbnail_border.xml`, `thumbnail_placeholder_bg.xml` | `#BDBDBD`, `#FFFFFF`, `#F0F0F0` | T → outlineVariant / surfaceContainer |
-| `drawable/bg_device_box.xml` | `@android:color/darker_gray` stroke (2.3:1) | T → colorOutline |
-| `drawable/circle_background.xml` | `@android:color/holo_blue_light` | T → primary container |
-| `drawable/side_nav_bar.xml` | teal gradient `#4DB6AC/#009688/#00695C` | F (brand header) — check text on it |
-| `drawable/panel_handle_grip.xml`, `panel_edge_shadow.xml` | translucent black | T → onSurfaceVariant / outline (invisible in dark) |
-| `drawable/bg_token.xml` | `#33FFFFFF` / `#14FFFFFF` | F (on navy strip) |
-| `drawable/bg_ar_chip.xml`, `ripple_ar_toolbar_btn.xml` | `#CC000000`, `#40FFFFFF` | F (AR/map overlay) → `ar_overlay_bg_dark` |
-| `drawable/bg_map_rounded.xml` | `#00FFFFFF` | F (transparent) |
-| `color/nav_ripple_color.xml` | `#1E155DA8`, `#1F41484D` | T (light-tuned; check dark) |
-| `drawable/battery_level.xml`, `ic_bolt.xml` | fixed fills, tinted in code | F (toolbar) ✅ fill now `toolbar_*` |
-| ~60 vector icons (`ic_*`) | `@android:color/black|white` or hex `fillColor` | usually tinted at use (`app:tint`); phase 2: verify every untinted use (`ic_camera_orange`, `ic_delete_red`, `ic_edit_blue`, `ic_device_status`, `ic_stat_location`, `ic_ar_*`, `ic_viewer_*`) |
-| `ic_launcher_*`, `rs2_client_*` | brand artwork | F |
+| File | Hit | Class | Status |
+|---|---|---|---|
+| `drawable/bg_ar_chip.xml`, `ripple_ar_toolbar_btn.xml` | `#CC000000`, `#40FFFFFF` | F (camera / map) | ✅ p2 `ar_overlay_bg_dark`, `ar_overlay_ripple` |
+| `color/nav_ripple_color.xml` | light-only `#1E155DA8` / `#1F41484D` | T | ✅ p2 `?attr/colorPrimary` / `colorOnSurfaceVariant` at 12 % (light unchanged) |
+| `drawable/bg_model_badge.xml` | `#FFFFFFFF` | — | shape only; always tinted (`backgroundTint`) |
+| `drawable/battery_level.xml`, `ic_bolt.xml` | fixed fills, tinted in code | F | ✅ p1 |
+| `drawable/bg_token.xml` | `#33FFFFFF` / `#14FFFFFF` | F (navy strip) | kept |
+| `drawable/side_nav_bar.xml`, `badge_bg.xml`, `bg_rounded_tab.xml`, `thumbnail_border.xml`, `thumbnail_placeholder_bg.xml`, `bg_device_box.xml`, `circle_background.xml`, `panel_handle_grip.xml`, `panel_edge_shadow.xml` | assorted fixed colours | — | **unreferenced** by any layout or Kotlin (checked in p2); left untouched, no visual effect |
+| `ic_ar_altitude`, `ic_ar_debug`, `ic_ar_menu` (untinted, white fill) | `#FFFFFF` | F | only used on the dark AR tool card — verified |
+| `ic_camera_orange` | orange | — | only referenced from commented-out XML |
+| `ic_stat_location` | grey fills | — | tinted `?attr/colorOnSurface` at use; notification icon is system-tinted |
+| `ic_launcher_*`, `rs2_client_*` | brand artwork | F | kept |
 
 ### Kotlin: programmatic colours
 
-| File | Hits | Class | Status |
-|---|---|---|---|
-| `MainActivity.kt` `levelColor` | `app_*` on navy (2.2–4.1:1), `darker_gray` | T (toolbar roles) | ✅ `GnssToolbarColors` |
-| `ui/toolbar/GnssToolbarRenderer.kt` | battery `0xFF4CAF50/F44336/FFC107`; pill fills | F (strip) | ✅ toolbar roles + pill outline |
-| `ui/toolbar/report/GnssStatusSheet.kt` | `app_warning` / `app_success` / colorError | T | ✅ `?attr/colorStatus*` |
-| `ui/components/FixBadgeView.kt` | `background_light`, black, `darker_gray`, `holo_*`, `Color.GRAY`, 12/10 sp | T | ✅ theme attrs, 14/12 sp, tnum |
-| `ui/openinar/OpenInARFragment.kt` | `app_*` status on AR chips (≈ 1.9:1 in light theme), `android.R.color.white`, `0xFFFF8C0D` | F (overlay) | ✅ status → `ar_overlay_*`; white / orange phase 2 |
-| `ui/home/HomeFragment.kt` | `app_*` severity (aliases) | T | ✅ via aliases; coordinate values Reading/tnum |
-| `ui/models/readiness/ReadinessUi.kt` | `app_*` (aliases) | T | ✅ via aliases |
-| `ui/models/ModelsAdapter.kt` | `#0D47A1`, `#B71C1C` icon tints (fail in dark) | T | phase 2 → colorPrimary / colorError |
-| `ui/models/ModelsFragment.kt`, `ModelPickerActivity.kt` | `holo_purple`, `holo_blue_dark` (refresh spinner) | T | phase 2 → colorPrimary/secondary |
-| `ui/models/ModelDiagnosticsDialogFragment.kt` | `android.R.color.white` verdict text | T | phase 2 |
-| `ui/viewpoints/CoordinateDetailUiMapper.kt` | 16 fixed badge fills (`0xFF1565C0`, `0xFF2E7D32`, `0xFFE65100`, `0xFFF9A825`, …) with white text | T | phase 2 → status containers / on-container (`F9A825` + white ≈ 1.9:1) |
-| `ui/viewpoints/SimpleCoordinatesAdapter.kt` | fallbacks `Color.BLACK/GRAY`, avatar `#BDBDBD` + white | T (fallbacks ok) | phase 2: avatar |
-| `ui/development/DevelopmentFragment.kt` | 13 raw `textSize` (11–14), `0xFF2E7D32/C62828/F9A825/1565C0/FF5722/9E9E9E/808080` | T | phase 2 → status roles + type styles |
-| `ui/settings/SelfTestDisplay.kt` | `holo_green_dark` (3.4:1), `holo_orange_dark` (2.4:1), `holo_red_dark`, `darker_gray` | T | phase 2 → status roles (pure mapper; keep testable) |
-| `ui/common/SkyplotView.kt` | constellation series colours, `Color.WHITE`, 11 sp labels | F (series) / T (labels) | phase 2: keep series, theme axes/labels, ≥ 12 sp |
-| `ui/common/SnrBarView.kt` | bar colours, night-aware axis/text alpha | F (series) | phase 2: validate bars ≥ 3:1 in both themes |
-| `ui/common/SatelliteSignalChartView.kt` | 10 sp axis labels | T | phase 2: ≥ 12 sp |
-| `res/values/colors.xml` `chart_*` | light/dark chart roles | T | phase 2: verify chart_text / axes |
-| `ui/openinar/CoordinateLabelOverlay.kt`, `OffScreenPinIndicatorOverlay.kt` | `0xCC111111`, cyan `0xFF00E5FF`, white, `0xFFCCCCCC`; 11/9/8 sp × dp | F (camera) | phase 2: sizes ≥ 12 sp-equivalent, centralise colours |
-| `ui/openinar/PinInspectBottomSheet.kt` | FIX/FLOAT/DGPS colours (FLOAT blue, DGPS orange — inconsistent) | T | phase 2 → status roles |
-| `ui/rendermap/StakeoutController.kt` | `0xFF4CAF50/FF9800/F44336`, `0xCCFF5722` | F (map lines) / T (text at 465) | phase 2 |
-| `ui/rendermap/MapOverlayController.kt`, `LiveTrackingController.kt`, `CoordinateMarkerLayer.kt` | map polylines / labels | F (map) | phase 2: validate on satellite + light tiles |
-| `ui/rendermap/CoordinateToggleAdapter.kt`, `CoordinateInfoBottomSheet.kt` | `Color.WHITE` icon bg, default `0xFF2196F3` | T / F (user colour) | phase 2 |
-| `ui/settings/categories/CoordinatesSettingsController.kt` | fallback `0xFF7D5260` (purple M3 default) | T fallback only | phase 2 (low) |
-| `data/export/CoordinateBackup.kt`, `ImportCoordinateBackupUseCase.kt`, `AddCoordinateDialogFragment.kt` | default user marker colour | F (stored data) | keep |
-| `service/Notif.kt` | `Color.GREEN` LED | F | keep |
+| File | Hits | Status |
+|---|---|---|
+| `MainActivity.kt` `levelColor`, `GnssToolbarRenderer.kt`, `GnssStatusSheet.kt`, `FixBadgeView.kt` | | ✅ p1 |
+| `ui/home/HomeFragment.kt`, `ui/models/readiness/ReadinessUi.kt` | `app_*` aliases | ✅ p1 aliases; p2 adds `ReadinessStyle.verdictTone` |
+| `ui/theme/StatusTone.kt` (new, p2) | — | enum of the 5 roles: `foreground / container / onContainer(view or context)` |
+| `ui/viewpoints/CoordinateDetailUiMapper.kt` | 16 fixed fills + white text | ✅ p2 `BadgeUi.tone`; chip = container + on-container |
+| `ui/models/ModelsAdapter.kt` | `#0D47A1` / `#B71C1C` icon tints (2.1 / 2.7:1 on dark card) | ✅ p2 colorPrimary / colorError; readiness chip tone |
+| `ui/models/ModelsFragment.kt`, `ModelPickerActivity.kt` | holo refresh colours | ✅ p2 colorPrimary / colorSecondary on surfaceContainerHigh |
+| `ui/models/ModelDiagnosticsDialogFragment.kt` | white verdict text | ✅ p2 verdict tone container + on-container |
+| `ui/viewpoints/SimpleCoordinatesAdapter.kt` | avatar `#BDBDBD` + white (1.9:1); legacy accent `md_primary_40` | ✅ p2 surfaceContainerHighest + onSurfaceVariant; colorPrimary |
+| `ui/development/DevelopmentFragment.kt` | 13 raw sizes, 7 fixed status colours | ✅ p2 type-scale styles, `StatusTone` |
+| `ui/settings/SelfTestDisplay.kt` | holo colours (2.4–3.4:1) | ✅ p2 returns `StatusTone` (pure, tested) |
+| `ui/openinar/PinInspectBottomSheet.kt` | FLOAT blue / DGPS orange (inconsistent) | ✅ p2 same roles as everywhere (FLOAT warning, DGPS info) |
+| `ui/openinar/OpenInARFragment.kt` | `android.R.color.white` toggles / Single | ✅ p2 `ar_overlay_text`; test-cube marker colour is stored data (F) |
+| `ui/openinar/CoordinateLabelOverlay.kt`, `OffScreenPinIndicatorOverlay.kt` | `0xCC111111`, cyan, white, `#CCCCCC`; 11/9/8 dp | ✅ p2 named `ar_overlay_*`; 12 sp (scales with font) |
+| `ui/common/SkyplotView.kt`, `SnrBarView.kt`, `SatelliteSignalChartView.kt` | fixed series / axes; 10–11 sp | ✅ p2 `chart_*` roles, 12 sp (see [Charts](#charts)) |
+| `ui/rendermap/StakeoutController.kt` | distance colours `#4CAF50/#FF9800/#F44336` on the card | ✅ p2 `StatusTone`; stakeout line stays F |
+| `ui/rendermap/MapOverlayController.kt` | label `0xB3000000` + white; boundary lines | ✅ p2 `map_label_*`; lines F |
+| `ui/rendermap/LiveTrackingController.kt`, `CoordinateMarkerLayer.kt`, `CoordinateDetailFragment.kt` marker bitmap | map polylines / marker border | F (kept, guard allowlist) |
+| `ui/rendermap/CoordinateToggleAdapter.kt` | `Color.WHITE` behind model thumbnails | F: thumbnails are rendered with a transparent background; a fixed light backdrop keeps dark geometry visible in both themes |
+| `ui/settings/categories/CoordinatesSettingsController.kt` | fallback `0xFF7D5260` | ✅ p2 no fallback literal |
+| `data/export/CoordinateBackup.kt`, `ImportCoordinateBackupUseCase.kt`, `AddCoordinateDialogFragment.kt`, `CoordinateInfoBottomSheet.kt` | default user marker colour | F (stored data) |
+| `service/Notif.kt` | `Color.GREEN` LED | F |
+
+`HardcodedColorGuardTest` now also scans Kotlin (`Color.parseColor/rgb/argb`, `toColorInt`, 8-digit `0x…` literals,
+`android.R.color.*` except transparent) with an exact per-file allowlist of the F items above.
 
 ### Text sizes and fonts
 
-- Raw `android:textSize` in layouts (41): `dialog_add_point` (4 × 12), `dialog_model_diagnostic` (22/15/16/14/13),
-  `fragment_coordinate_detail` (2 × 12), `fragment_home` + sw600dp (counts 18), `fragment_open_in_ar` (16/12/**11**/13/**11**),
-  `fragment_render_map` (18), `item_ar_model_row` (16/13), **`item_map_point` (10)**, `item_readiness_check` (16/15/14),
-  `item_sep` (14), `item_token` (✅ now styles), `nav_drawer_badge` (12), `sheet_ar_models` (18/13/12/12/13/13/13/12),
-  `styles_model_card.xml` (13). Phase 2: replace with `TextAppearance.App.*`; fix the 10–11 sp ones.
-- `?attr/textAppearanceLabelSmall` (11 → 12 sp ✅ via theme) used in `dialog_add_point`, `fragment_coordinate_detail`,
-  `fragment_render_map` (×6), `item_coordinate_toggle`, `item_gnss_stat_tile`, `item_receiver_detail_row`,
-  `view_receiver_card`: phase 2 should screenshot these for wrapping.
-- `TextAppearance.App.AR.OverlaySmall` 9 → 12 sp ✅ (AR tool card in `fragment_open_in_ar`, map tools in
-  `fragment_render_map`, `view_ar_move_panel`): phase 2 screenshots; "My Location" may wrap to two lines in the 72 dp card.
-- Kotlin `textSize`: `DevelopmentFragment` (13 hits, 11–14), `SkyplotView` (11), `SatelliteSignalChartView` (10/14),
-  `SnrBarView` (14), `CoordinateLabelOverlay` / `OffScreenPinIndicatorOverlay` (11/9/8 × dp), `MapOverlayController` (12 × dp),
-  `SimpleCoordinatesAdapter` avatar.
-- `fontFamily="monospace"` in `view_ar_move_panel`, `fragment_render_map` (×2), `fragment_open_in_ar`,
-  `dev_page_raw_nmea`, `bottom_sheet_pin_inspect`: keep for raw NMEA / debug; readings (render map stakeout values,
-  move panel) should move to `Reading` + tnum.
-- 43 × `textStyle="bold"`: review for unnecessary bold in phase 2.
+- Raw `android:textSize` in layouts: ✅ p2 all replaced by `TextAppearance.App.*` / Material 3 styles except
+  `item_token.xml` (toolbar, phase 1, pinned by `ToolbarFitTest`) and the decorative `item_sep.xml` "|" (14 sp on the
+  strip). `item_map_point` 10 → 12 sp; `fragment_open_in_ar` chips 11 → 12 sp; dialogs / sheets on the scale.
+- Kotlin sizes: ✅ p2 DevelopmentFragment (styles), charts (12 sp), AR canvas labels (12 sp, sp-based).
+  `MapOverlayController` labels stay 12 dp (bitmap drawn into a map marker; size matched to the map, not the font
+  scale). `SnrBarView` title 14 sp (unused view).
+- Monospace: only raw NMEA (`dev_page_raw_nmea`, NMEA history), the GSV per-constellation table and the AR debug
+  overlay. Readings that were monospace (pin sheet lat/lon, map selected coordinates, stakeout ΔN/ΔE, move-panel
+  offset) now use `Reading` + `tnum`.
+- Bold: removed from chips / badges (`StatusLabel` medium), section headers (`CardSectionLabel`), dialog titles,
+  sheet titles and developer row labels. Kept for live values (toolbar, stakeout distance / azimuth, AR labels).
+- Tabular numerals added in p2: coordinate list + detail rows + stat tiles, pin sheet, map selected card, stakeout,
+  AR chips / labels / move panel, developer live readings, model-readiness details, Home counts, nav badge.
 
 ### Alpha text
 
-80 `android:alpha="0.x"` attributes in layouts (mostly 0.7 on settings subtitles / metric labels:
-`content_settings_*`, `item_settings_row`, `dialog_capture_coordinate`, `fragment_render_map`, …) plus the
-`Settings.Row.Subtitle` and `CaptureMetricLabel` styles. onSurface at 0.7 passes (light 6.3:1 on white; tested on all
-surfaces in both themes), but phase 2 should prefer `?attr/colorOnSurfaceVariant` without alpha.
+onSurface at 0.7 passes on every surface (tested). p2 removed the 0.85 alpha on the coordinate list lat/lon line;
+the remaining settings-subtitle alphas are unchanged (they pass; converting them is cosmetic churn).
 
-## Open items for phase 2
+## Charts
 
-1. Work the audit queue above; lower the `HardcodedColorGuardTest` allowlist as layouts are fixed (and consider a
-   Kotlin-side guard once the queue is short).
-2. Coordinate detail / list badges → status container + on-container roles (`CoordinateDetailUiMapper`).
-3. Charts / skyplot / SNR: keep series hues, theme the axes and labels, ≥ 12 sp.
-4. AR / map overlays: label sizes (Canvas overlays 8–11 sp), `item_map_point` 10 sp, AR model sheets; validate on
-   camera and satellite imagery.
-5. Font-scale (1.3×, 1.5×) screenshots for Home, toolbar, report, settings, dialogs, AR controls.
-6. Device-only checks: outdoor legibility of the toolbar roles on the SM-X940, AR overlay readability in sunlight.
+Charts are drawn on the card surface (`colorSurface`, sometimes `surfaceContainer`) and use only `chart_*`
+resources (light in `values/`, dark in `values-night/`):
+
+| Role | Light | Dark | Rule |
+|---|---|---|---|
+| `chart_text` / `chart_title` (axis labels, PRNs, legend, titles) | `#424242` / `#1A1C1E` | `#E2E4E7` / `#FFFFFF` | ≥ 4.5:1, 12 sp |
+| `chart_axis` | `#71787E` | `#8B9198` | ≥ 3:1 |
+| `chart_grid` | `#C5CED8` | `#41484D` | decorative |
+| SNR series `chart_bar_strong / medium / weak` | status success / warning / error | same (night values) | ≥ 3:1, legend names them |
+| `chart_bar_unused` | `#757575` | `#8B9198` | ≥ 3:1 |
+| `chart_used_halo` (skyplot "used") | `#1A1C1E` | `#FFFFFF` | ≥ 3:1 |
+| constellation strokes GPS / GLO / GAL / BDS / QZSS / SBAS / IRNSS | `#1565C0 #8E24AA #2E7D32 #8D6E00 #5E35B1 #546E7A #C43E00` | the original pastels `#90CAF9 #CE93D8 #A5D6A7 #FFE082 #B39DDB #B0BEC5 #FFAB91` | ≥ 3:1, hues kept distinct |
+
+Skyplot dots keep their SNR-dependent alpha (decorative fill); the constellation stroke and halo carry the
+boundary. Constellations are also named by the PRN prefix (G/R/E/B/Q/S/I).
+
+## Overlay conventions (phase 2)
+
+- **AR canvas labels**: pill `ar_overlay_label_bg` (80 % `#111111`), text `ar_overlay_text`, distance line
+  `ar_overlay_text_secondary`, model-linked accent `ar_overlay_model_accent` (cyan). Measured on the pill composited
+  over a white frame: white 10.2, `#CCCCCC` 6.4, cyan 6.6. Text 12 sp, follows the font scale, tabular distance.
+- **AR chips** (`bg_ar_chip` = `ar_overlay_bg_dark`): `TextAppearance.App.AR.Overlay` (12 sp) + `tnum`; status text
+  `ar_overlay_*` ≥ 6.4 over white. The GNSS and AR-quality chips are stacked in a column so they can't overlap.
+- **Tool cards** (AR + map): width wrap_content, min 72 dp, labels ≤ 96 dp so long labels wrap to two lines.
+- **Map point labels**: `map_label_text` on `map_label_bg` (70 % black halo), 8.6:1 over a white tile; satellite
+  tiles are darker, so contrast only rises. Map lines and marker borders are fixed hues (F) chosen for both light
+  and satellite tiles; not renderable in tests.
+
+## Font scaling
+
+`FontScalePreviewTest` (light + dark) renders at font scale 1.0, 1.3 and 1.5: Home, GNSS toolbar Fix / Float /
+warning (411 and 924 dp), GNSS Status report, Settings → Receiver (Advanced expanded), coordinate list rows and
+detail (badges, stat tiles, rows), model cards, model viewer chrome, developer raw-NMEA page and GNSS charts
+(skyplot + signal charts), capture dialog, pin-inspect bottom sheet, visible-models sheet, AR control layout and map
+control layout (camera / map imagery not renderable). Each tree is audited for vertically / horizontally clipped
+text (not ellipsized), text cut off by a fixed-size ancestor, and 48 dp touch targets on the listed controls; the test
+fails on any finding. PNGs: `app/build/previews/fontscale/<screen>_<10|13|15>x_<theme>.png`, findings in
+`findings_<theme>.txt`.
+
+Results (Robolectric, 411 dp phone frame unless noted; the SM-X940 tablet is wider, so these are worst cases).
+"Before" = the same test run against the phase-1 sources (`feature/visual-consistency`): 9 sub-48 dp coordinate-list
+overflow buttons (40 dp), the receiver-details and stakeout-title word splits and the capture-dialog clip below; the
+stat-tile split was found with the plain row.
+
+| Found | Fix |
+|---|---|
+| AR / map tool cards: at 1.5x "Location" filled the fixed 72 dp card edge to edge (before render); any longer one-word label (e.g. a map-type name like "Satellite") would split | card wrap_content, items wrap_content with 72 dp minimum, labels ≤ 96 dp (two lines) — 1.0x unchanged |
+| AR GNSS + AR-quality chips at fixed 68 / 98 dp offsets would overlap once the first wraps | stacked in a vertical column |
+| Coordinate detail stat tiles ("±0.012 m", "41.24538710°") split mid-number at 1.5x (lat/lon tiles already tight on a phone at 1.0x) | `AdaptiveTileRow`: stacks the tiles when a value can't fit its column; unchanged when it fits |
+| Receiver card: "Receive / r details" at 1.5x | action row → ConstraintLayout `Flow` (wraps whole buttons) |
+| Capture dialog model button fixed 48 dp height clipped text at 1.5x | wrap_content, minHeight 48 dp |
+| Visible-models sheet: three weighted buttons overflowed (minWidth 88 dp) and the two-line one was baseline-shifted out of the row | minWidth 0, `baselineAligned=false` |
+| Stakeout panel title split mid-word at 1.5x (panel is 72 dp inset each side) | single line, ellipsized (the icon + panel content identify it) |
+| Nav drawer badge fixed 22 dp height | wrap_content, 22 dp minimum |
+| Coordinate list overflow button 40 × 40 dp; map selected-point close 40 dp | 48 × 48 dp (icon unchanged, padding 12 dp) |
+| Signal-chart legend (3×2 overview mode only) ran off the right edge with 12 sp labels | stops before an item that doesn't fit (overview mode is not used by the app's developer page, which shows per-constellation charts) |
+
+After the fixes the audit reports **no** clipped / word-split text and no sub-48 dp checked controls at 1.0 / 1.3 /
+1.5 in either theme. Observed but accepted: the GNSS toolbar at 411 dp and 1.5x ellipsizes the warning pill text
+("Corr. st…") — the filled red pill + ⚠ icon still signal the warning and the chevron opens the full report (the
+toolbar's priority / compaction rules are phase-1 logic and unchanged); long settings descriptions and dialog text
+wrap to more lines and the pages scroll. On a 891 dp-tall phone at 1.5x the expanded map tool card reaches the
+stakeout panel (both optional overlays; not an issue on the tablet).
+
+## Intentional exceptions
+
+Fixed colours that stay fixed (all named, all validated where text is involved):
+
+1. GNSS strip `#0F3554` and its `toolbar_*` roles — same in both themes by design.
+2. AR camera overlays (`ar_overlay_*`) — light-on-dark over scrims; theme surfaces would vanish over a bright frame.
+3. Model-viewer canvas (`model_viewer_*`) — matches the fixed light Filament clear colour.
+4. Map graphics (polylines, accuracy circle, stakeout line, marker borders, label halo) — drawn over map tiles,
+   not themed UI.
+5. User marker colours (stored data) and the test-cube marker.
+6. Model thumbnail backdrop (white) in the coordinate toggle list — transparent thumbnails need a light backdrop.
+7. Chart constellation hues — data series; per-theme variants, not theme roles.
+8. Notification LED, launcher / brand artwork.
+
+## Remaining / device-only
+
+- Outdoor legibility on the SM-X940 in sunlight: toolbar roles, AR chips / labels over real camera imagery, map
+  labels over satellite tiles. Not verifiable in Robolectric.
+- AR GNSS chip is tappable (opens the GNSS Status report) but ~28 dp tall; it sits in the AR chip stack, so enlarging
+  its hit area is left for a device review (the toolbar's own report entry is hidden in AR).
+- Unreferenced drawables listed above could be deleted in a cleanup change (not a visual change).
