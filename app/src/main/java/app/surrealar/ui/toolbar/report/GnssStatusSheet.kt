@@ -261,10 +261,11 @@ class GnssStatusSheet : BottomSheetDialogFragment() {
 
     private fun TextView.setIfChanged(s: CharSequence) { if (text?.toString() != s.toString()) text = s }
 
+    /** Semantic status roles from the theme (docs/design-system.md): ≥ 4.5:1 on the sheet surface, light and dark. */
     private fun levelColor(v: View, level: ReportLevel, defaultAttr: Int): Int = when (level) {
-        ReportLevel.WARNING -> MaterialColors.getColor(v, androidx.appcompat.R.attr.colorError)
-        ReportLevel.CAUTION -> v.context.getColor(R.color.app_warning)
-        ReportLevel.GOOD -> v.context.getColor(R.color.app_success)
+        ReportLevel.WARNING -> MaterialColors.getColor(v, R.attr.colorStatusError)
+        ReportLevel.CAUTION -> MaterialColors.getColor(v, R.attr.colorStatusWarning)
+        ReportLevel.GOOD -> MaterialColors.getColor(v, R.attr.colorStatusSuccess)
         ReportLevel.NORMAL -> MaterialColors.getColor(v, defaultAttr)
     }
 

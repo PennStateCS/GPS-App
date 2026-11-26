@@ -17,7 +17,7 @@
         android:layout_width="16dp"
         android:layout_height="16dp"
         android:layout_marginEnd="4dp"
-        app:tint="@android:color/white"
+        app:tint="@color/toolbar_on_primary"
         android:contentDescription="@null"
         android:importantForAccessibility="no"
         android:src="@drawable/ic_satellite_24"
@@ -29,8 +29,7 @@
         android:layout_height="wrap_content"
         android:text="Acc"
         android:importantForAccessibility="no"
-        android:textSize="12sp"
-        android:textColor="@color/app_on_status_strip_variant"
+        android:textAppearance="@style/TextAppearance.App.Toolbar.Label"
         android:maxLines="1" />
 
     <TextView
@@ -38,10 +37,8 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="—"
-        android:textSize="14sp"
-        android:textStyle="bold"
+        android:textAppearance="@style/TextAppearance.App.Toolbar.Value"
         android:layout_marginStart="4dp"
-        android:textColor="@color/app_on_status_strip"
         android:maxLines="1"
         android:ellipsize="end"
         android:fontFeatureSettings="tnum"

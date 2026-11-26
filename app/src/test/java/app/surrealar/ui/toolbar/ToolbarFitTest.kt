@@ -203,13 +203,8 @@ class ToolbarFitTest {
             lateinit var r: GnssToolbarRenderer
             r = GnssToolbarRenderer(t.getValue("src"), t.getValue("fix"), t.getValue("acc"), t.getValue("warn"),
                 t.getValue("coord"), t.getValue("alt"), t.getValue("batt"), chevron,
-                colorFor = { level -> when (level) {
-                    GnssStatusLevel.SUCCESS -> ctx.getColor(R.color.app_success)
-                    GnssStatusLevel.WARNING -> ctx.getColor(R.color.app_warning)
-                    GnssStatusLevel.ERROR -> ctx.getColor(R.color.app_error)
-                    GnssStatusLevel.INFO -> ctx.getColor(R.color.app_info)
-                    GnssStatusLevel.NONE -> android.graphics.Color.GRAY
-                } },
+                // Same mapping as MainActivity.levelColor (toolbar roles on the navy strip).
+                colorFor = { level -> GnssToolbarColors.color(ctx, level) },
                 onBatteryVisibilityChanged = { visible -> r.renderBattery(visible, battery, false, textOnly = true) },
                 strip = root)
             return Strip(root, t, chevron, r)

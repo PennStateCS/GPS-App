@@ -1024,13 +1024,8 @@ class MainActivity : AppCompatActivity(), app.surrealar.ui.toolbar.report.GnssSt
         get() = isCompact || isPortrait
 
     /** Resolves a mapper [GnssStatusLevel] to the toolbar color. View concern only. */
-    private fun levelColor(level: GnssStatusLevel): Int = when (level) {
-        GnssStatusLevel.SUCCESS -> getColor(R.color.app_success)
-        GnssStatusLevel.WARNING -> getColor(R.color.app_warning)
-        GnssStatusLevel.INFO    -> getColor(R.color.app_info)
-        GnssStatusLevel.ERROR   -> getColor(R.color.app_error)
-        GnssStatusLevel.NONE    -> getColor(android.R.color.darker_gray)
-    }
+    private fun levelColor(level: GnssStatusLevel): Int =
+        app.surrealar.ui.toolbar.GnssToolbarColors.color(this, level)
 
     // Toolbar rendering now lives in GnssToolbarRenderer (see toolbarRenderer); call render(state).
 

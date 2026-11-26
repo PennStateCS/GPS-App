@@ -921,7 +921,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     if (fix == null) {
                         _binding?.chipArGnssStatus?.let {
                             it.text = "Waiting for GNSS"
-                            it.setTextColor(requireContext().getColor(R.color.app_error))
+                            it.setTextColor(requireContext().getColor(R.color.ar_overlay_error))
                         }
                         return@collect
                     }
@@ -1016,7 +1016,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.showPlanes.collect { on ->
                     arShowPlanes = on
-                    val tint = if (on) requireContext().getColor(R.color.app_info)
+                    val tint = if (on) requireContext().getColor(R.color.ar_overlay_info)
                                else    requireContext().getColor(android.R.color.white)
                     binding.iconTogglePlanes.setColorFilter(tint, android.graphics.PorterDuff.Mode.SRC_IN)
                 }
@@ -1028,7 +1028,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.showPointCloud.collect { on ->
                     arShowPointCloud = on
-                    val tint = if (on) requireContext().getColor(R.color.app_info)
+                    val tint = if (on) requireContext().getColor(R.color.ar_overlay_info)
                                else    requireContext().getColor(android.R.color.white)
                     binding.iconTogglePointCloud.setColorFilter(tint, android.graphics.PorterDuff.Mode.SRC_IN)
                 }
@@ -1041,7 +1041,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 viewModel.occlusionEnabled.collect { on ->
                     arOcclusionEnabled = on
                     applyDepthMode()
-                    val tint = if (on) requireContext().getColor(R.color.app_info)
+                    val tint = if (on) requireContext().getColor(R.color.ar_overlay_info)
                                else    requireContext().getColor(android.R.color.white)
                     binding.iconToggleOcclusion.setColorFilter(tint, android.graphics.PorterDuff.Mode.SRC_IN)
                     binding.txtToggleOcclusion.text = if (on) "Occlude ✓" else "Occlude"
@@ -3780,11 +3780,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             else -> fix.provider.label
         }
         val (solLabel, solColor) = when (fix.rtkStatus) {
-            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX    -> "RTK Fix"    to requireContext().getColor(R.color.app_success)
-            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT  -> "RTK Float"  to requireContext().getColor(R.color.app_warning)
-            io.github.pennstatecs.geokit.gnss.model.RtkStatus.DGPS   -> "DGPS"       to requireContext().getColor(R.color.app_info)
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX    -> "RTK Fix"    to requireContext().getColor(R.color.ar_overlay_success)
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT  -> "RTK Float"  to requireContext().getColor(R.color.ar_overlay_warning)
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.DGPS   -> "DGPS"       to requireContext().getColor(R.color.ar_overlay_info)
             io.github.pennstatecs.geokit.gnss.model.RtkStatus.SINGLE -> "Single"     to requireContext().getColor(android.R.color.white)
-            else                                                  -> "No Fix"     to requireContext().getColor(R.color.app_error)
+            else                                                  -> "No Fix"     to requireContext().getColor(R.color.ar_overlay_error)
         }
         val acc = fix.hAccM?.let { " · H ±${"%.2f".format(it)} m" } ?: ""
         b.chipArGnssStatus.text = "$src · $solLabel$acc"

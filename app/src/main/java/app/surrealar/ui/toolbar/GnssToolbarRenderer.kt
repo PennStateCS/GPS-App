@@ -308,7 +308,11 @@ class GnssToolbarRenderer(
             val dp = ctx.resources.displayMetrics.density
             (warn.root as? LinearLayout)?.let { row ->
                 // The pill is the token's own background, inset so the 48 dp touch target stays.
-                val pill = GradientDrawable().apply { cornerRadius = 12 * dp; setColor(bg) }
+                val pill = GradientDrawable().apply {
+                    cornerRadius = 12 * dp; setColor(bg)
+                    // The red fill alone is < 3:1 against the navy strip: a light-red edge keeps the pill's shape visible.
+                    if (critical) setStroke(dp.toInt().coerceAtLeast(1), ctx.getColor(R.color.gnss_toolbar_warning_critical_stroke))
+                }
                 // Inset 6 dp on the left so the pill does not touch the accuracy value.
                 row.background = android.graphics.drawable.InsetDrawable(pill, (6 * dp).toInt(), (12 * dp).toInt(), 0, (12 * dp).toInt())
                 row.setPadding((14 * dp).toInt(), 0, (8 * dp).toInt(), 0)
@@ -366,11 +370,13 @@ class GnssToolbarRenderer(
 
         // Charging turns the fill green, except below 20 %: a critical level keeps its warning
         // color and only gains the bolt, so plugging in never hides a nearly-dead battery.
+        // Toolbar roles (≥ 6.4:1 on the navy strip); same thresholds as before.
+        val ctx = batt.icon.context
         val fillColor = when {
-            charging == true && percentage >= 20 -> 0xFF4CAF50.toInt()
-            percentage <= 15 -> 0xFFF44336.toInt()
-            percentage <= 30 -> 0xFFFFC107.toInt()
-            else -> 0xFF4CAF50.toInt()
+            charging == true && percentage >= 20 -> ctx.getColor(R.color.toolbar_success)
+            percentage <= 15 -> ctx.getColor(R.color.toolbar_error)
+            percentage <= 30 -> ctx.getColor(R.color.toolbar_warning)
+            else -> ctx.getColor(R.color.toolbar_success)
         }
 
         try {
