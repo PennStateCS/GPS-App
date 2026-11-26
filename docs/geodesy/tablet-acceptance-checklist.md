@@ -66,6 +66,11 @@ receiver on TCP; optionally an old JSON backup made before the update (for impor
 | 6.2 | CSV export: State Plane ftUS + GEOID18; lat/lon + EGM2008; ITRF2020 | 6 columns; header e.g. "Elevation (m H EGM2008)"; System column names frame/epoch; values match Details |
 | 6.3 | JSON backup export, then import that backup | Imports; provenance of new points preserved |
 | 6.4 | Import an OLD backup (made before the update) | Imports; provenance shows "unknown" |
+| 6.5 | CSV export with no points, State Plane ftUS | Header row only, "Point,Northing (ftUS),Easting (ftUS),…" (the header follows the settings, not the first point) |
+| 6.6 | CSV export where a point has no position in the chosen system (e.g. SPCS2022 zone missing) | Same columns; that row's Northing/Easting/Elevation blank and System "unavailable: <reason>"; never lat/lon under Northing/Easting; snackbar "…; N without a position in the selected coordinate system" (`PointsCsvExporterConsistencyTest`) |
+| 6.7 | Import a backup with `"schemaVersion": 2` (edit a copy) | "Import failed: This backup was made by a newer version of SurReal AR … Nothing was changed."; existing points untouched, also with Replace (`CoordinateBackupCompatibilityTest`) |
+| 6.8 | Import a backup with some broken entries (edit a copy: remove an altitude, add `5` to the coordinate list), Merge | Before anything is written: "Backup has invalid entries" listing the skipped entries; Cancel imports nothing, "Import N valid" imports the rest |
+| 6.9 | Models → import a model, rotate the tablet while the "Add 3D Model" dialog is open, tap Add | Toast "Model import was interrupted … Please import the file again."; no model added; importing again works |
 
 ## 7. Receiver settings
 | # | Check | Expected result |

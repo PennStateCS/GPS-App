@@ -18,7 +18,11 @@ import java.io.File
  * the row but not the file).
  *
  * Only entries older than [MIN_AGE_MS] are touched, so an import that is still copying or waiting
- * in the "Add 3D Model" dialog is never swept.
+ * in the "Add 3D Model" dialog is never swept. The sweep runs once per process start, so a live import
+ * (staged copy, no Room row yet) is only ever looked at by a sweep from a LATER process; by then its
+ * dialog has been recreated without the save callback and cannot commit it (Add says the import was
+ * interrupted), so the copy is a genuine orphan once past the grace period. Entries that resolve
+ * outside the models folder (symbolic links) are never followed or deleted.
  */
 object ModelOrphanSweeper {
 
@@ -63,6 +67,10 @@ object ModelOrphanSweeper {
         val removed = mutableListOf<File>()
         for (entry in entries) {
             if (entry.name in referenced) continue
+            // Canonical-path guard: an entry that resolves outside modelsRoot (a symbolic link) is never followed
+            // or deleted — deleteRecursively would otherwise remove the link target's contents.
+            val target = runCatching { ModelFileCleaner.deletionTarget(entry, modelsRoot) }.getOrNull()
+            if (target == null || target.name != entry.name) continue
             if (nowMs - newestModified(entry) < minAgeMs) continue
             val ok = if (entry.isDirectory) entry.deleteRecursively() else entry.delete()
             if (ok) removed += entry

@@ -91,4 +91,39 @@ class ModelOrphanSweeperTest {
         assertTrue(sibling.exists())
         assertTrue(root.exists())
     }
+
+    /** Stabilization S2 item 11: a staged import (copied, no Room row yet) inside the grace period is kept. */
+    @Test
+    fun sweep_interruptedImportWithinGrace_isKept_pastGrace_isSwept() {
+        val root = tmp.newFolder("files", "models")
+        val staged = File(root, "staged.glb").apply { writeText("s") }
+        val stagedBundle = File(root, "stagedBundle").apply { mkdirs() }
+        File(stagedBundle, "m.gltf").apply { writeText("{}") }
+        // Just inside the grace period (the copy finished MIN_AGE_MS - 1 s ago, dialog still open).
+        val justInside = now - ModelOrphanSweeper.MIN_AGE_MS + 1_000L
+        staged.age(justInside); File(stagedBundle, "m.gltf").age(justInside); stagedBundle.age(justInside)
+
+        assertTrue(ModelOrphanSweeper.sweep(root, emptyList(), now).isEmpty())
+        assertTrue(staged.exists() && stagedBundle.exists())
+
+        // A later start after the grace period: the import can no longer be committed, so it is a genuine orphan.
+        val later = now + 2_000L
+        assertEquals(setOf("staged.glb", "stagedBundle"), ModelOrphanSweeper.sweep(root, emptyList(), later).map { it.name }.toSet())
+    }
+
+    @Test
+    fun sweep_neverFollowsALinkOutsideTheModelsFolder() {
+        val filesDir = tmp.newFolder("files")
+        val root = File(filesDir, "models").apply { mkdirs() }
+        val outside = tmp.newFolder("outside")
+        val precious = File(outside, "precious.txt").apply { writeText("p") }.age(old)
+        val link = File(root, "link")
+        val created = runCatching { java.nio.file.Files.createSymbolicLink(link.toPath(), outside.toPath()) }.isSuccess
+        org.junit.Assume.assumeTrue("symbolic links not available on this machine", created)
+
+        val removed = ModelOrphanSweeper.sweep(root, emptyList(), now + ModelOrphanSweeper.MIN_AGE_MS * 10)
+
+        assertTrue(removed.isEmpty())
+        assertTrue(precious.exists())
+    }
 }
