@@ -167,4 +167,14 @@ class HomeFieldStatusInputsTest {
         assertFalse(s.state == State.HIGH_ACCURACY)
         assertFalse("no receiver-reported identity attached", s.receiverDetail.contains("Emlid Reach RS4 Pro"))
     }
+
+    @Test fun `Home uses the toolbar's stabilised correction health - aging is never green (consistency, review M2)`() {
+        val conn = ReceiverUiFixtures.connected(ExternalReceiverProfile.REACH_RS4_PRO, identity = ReceiverUiFixtures.rs4ProIdentity())
+        val s = HomeFieldStatusMapper.map(HomeFieldStatusInputs.build(
+            snapshot(hAcc = 0.012), Provider.EXTERNAL_TCP, LocationSourceType.EXTERNAL, rs4Pro,
+            DiagnosticData(linesPerSecond = 10.0, totalParseErrors = 0), SkySnapshot(), conn, null, 0,
+            correctionHealth = app.surrealar.gnss.status.CorrectionHealth.AGING))
+        assertFalse("not High accuracy while corrections are aging", s.state == State.HIGH_ACCURACY)
+        assertTrue(s.headline + " / " + s.additionalWarnings, (listOf(s.headline) + s.additionalWarnings).any { it.contains("aging") })
+    }
 }

@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
@@ -128,7 +129,9 @@ class GnssStatusSheet : BottomSheetDialogFragment() {
         return combine(d.frames, d.selection, d.liveSource, device, status) { frame, sel, live, dev, st ->
             val recent = parseErrorWindow.update(android.os.SystemClock.elapsedRealtime(), st.second.totalParseErrors)
             GnssReportInputs(frame, sel, live, st.third, dev.first, dev.second, dev.third, st.first, st.second, recent)
-        }.conflate().map { GnssStatusReportPresenter.build(it) }.distinctUntilChanged()
+        }.conflate().map { GnssStatusReportPresenter.build(it) }
+            .flowOn(d.computeDispatcher)   // build off the main thread (review L6)
+            .distinctUntilChanged()
     }
 
     private fun render(r: GnssStatusReport) {

@@ -96,6 +96,20 @@ class ToolbarFitTest {
         }
     }
 
+    @Test fun `360 dp with a long status and two warnings - groups never overlap (review L4)`() {
+        val s = strip(battery = 12)
+        layoutAt(s, 360, warned.copy(fixText = "Reconnecting…",
+            warnings = listOf(Warning.REFERENCE_MAY_BE_COMPENSATED, Warning.CORRECTIONS_STALE)))
+        val v = s.renderer.visibleTokens()
+        assertTrue("critical tokens kept: $v", v.containsAll(ToolbarPriority.NEVER_DROPPED))
+        val leftEnd = listOf("src", "fix", "acc", "warn", "batt").map { s.tokens.getValue(it).root }
+            .filter { it.visibility == View.VISIBLE }.maxOf { it.right }
+        val rightStart = (listOf(s.tokens.getValue("coord").root, s.tokens.getValue("alt").root)
+            .filter { it.visibility == View.VISIBLE } + s.chevron).minOf { it.left }
+        assertTrue("groups overlap at 360 dp ($leftEnd > $rightStart)", leftEnd <= rightStart)
+        assertTrue("chevron inside the strip", s.chevron.right <= s.root.width)
+    }
+
     @Test fun `value changes don't change token widths`() {
         val s = strip(); layoutAt(s, 1480)
         val acc = s.tokens.getValue("acc").value

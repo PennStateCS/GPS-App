@@ -435,6 +435,8 @@ class GnssToolbarRenderer(
         val all = listOf(source.root, fix.root, acc.root, warn.root, batt.root, coord.root, alt.root, chevron)
         val gap = (GROUP_GAP_DP * s.resources.displayMetrics.density).toInt()
         fun total() = all.sumOf { width(it) } + gap
+        // Undo the previous render's squeeze (see the end of this function).
+        for (t in listOf(fix.value, warn.value)) { t.maxWidth = Int.MAX_VALUE; t.ellipsize = null }
         coord.separator?.isVisible = alt.root.isVisible
         for (step in ToolbarPriority.ORDER) {
             if (total() <= available) break
@@ -447,6 +449,19 @@ class GnssToolbarRenderer(
                 ToolbarPriority.Step.HIDE_COORDINATES -> coord.root.isVisible = false
                 ToolbarPriority.Step.HIDE_SOURCE -> source.root.isVisible = false
             }
+        }
+        // Last resort when even the never-dropped tokens are too wide (e.g. "Reconnecting…" + a warning on a 360 dp
+        // phone): ellipsize the status text, then the warning text, instead of overlapping the right group. The full
+        // wording stays in the content descriptions (TalkBack) and in the GNSS Status report.
+        val minPx = (MIN_SQUEEZED_DP * s.resources.displayMetrics.density).toInt()
+        for (t in listOf(fix.value, warn.value)) {
+            val over = total() - available
+            if (over <= 0) break
+            if (!t.isVisible) continue
+            t.measure(unspecified, unspecified)
+            t.maxWidth = (t.measuredWidth - over).coerceAtLeast(minPx)
+            t.ellipsize = android.text.TextUtils.TruncateAt.END
+            t.isSingleLine = true
         }
         coord.separator?.isVisible = coord.root.isVisible && alt.root.isVisible
     }
@@ -462,5 +477,7 @@ class GnssToolbarRenderer(
         const val STALE_ALPHA = 0.5f
         /** Minimum flexible space kept between the left and right groups. */
         const val GROUP_GAP_DP = 8
+        /** A squeezed status / warning text keeps at least this width (a few characters + ellipsis). */
+        const val MIN_SQUEEZED_DP = 48
     }
 }

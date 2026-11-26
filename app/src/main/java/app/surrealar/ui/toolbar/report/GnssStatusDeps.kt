@@ -51,6 +51,8 @@ interface GnssStatusDeps {
     val tilt: Flow<TiltStatus>
     /** DiagnosticsService.diagnosticData (the live NMEA source; never NmeaLogger). */
     val diagnostics: Flow<DiagnosticData>
+    /** Where the report is built (off the main thread; tests pass a main-thread dispatcher). */
+    val computeDispatcher: kotlinx.coroutines.CoroutineDispatcher get() = kotlinx.coroutines.Dispatchers.Default
     fun toggleCoordinates()
     fun openReceiverSettings()
 

@@ -142,6 +142,11 @@ object HomeFieldStatusMapper {
             else -> Live.EXTERNAL
         },
         val link: Link = if (isInternal) Link.NOT_APPLICABLE else Link.CONNECTED,
+        /**
+         * The toolbar's stabilised correction health (aging / stale / unavailable with hysteresis), so Home, the
+         * toolbar and the GNSS Status report show the same correction state. Null = Home's raw stale rule only.
+         */
+        val correctionHealth: app.surrealar.gnss.status.CorrectionHealth? = null,
     )
 
     fun map(i: Inputs): FieldStatus {
@@ -237,7 +242,7 @@ object HomeFieldStatusMapper {
             rtkStatus = i.rtkStatus,
             hAccM = i.hAccM,
             hAccEstimated = i.hAccEstimated,
-            corrections = GnssStatusInterpreter.rawStale(i.correctionAgeS),
+            corrections = i.correctionHealth ?: GnssStatusInterpreter.rawStale(i.correctionAgeS),
             reference = i.positionReference?.let { GnssStatusInterpreter.Reference.valueOf(it.name) },
             vAccInvalid = i.vAccInvalid,
         )

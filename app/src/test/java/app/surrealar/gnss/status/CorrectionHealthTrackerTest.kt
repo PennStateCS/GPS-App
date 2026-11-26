@@ -59,10 +59,23 @@ class CorrectionHealthTrackerTest {
         assertEquals(CorrectionHealth.OK, at(4_000, 1.0, RtkStatus.FIX))
     }
 
-    @Test fun `not applicable resets (source or receiver change, no live external fix)`() {
+    @Test fun `not applicable clears the warning but keeps seen-corrections (review M3), reset forgets`() {
         at(0, 20.0)
         assertEquals(CorrectionHealth.OK, t.update(false, 20.0, RtkStatus.FIX, 250))
-        assertEquals("seen-corrections memory is gone too", CorrectionHealth.OK, at(500, null, RtkStatus.SINGLE))
+        // After a fix dropout / reconnect blip, losing corrections still warns.
+        assertEquals(CorrectionHealth.UNAVAILABLE, at(500, null, RtkStatus.SINGLE))
+        // A source / receiver change (reset) forgets: a receiver never seen with corrections is not nagged.
+        t.reset()
+        assertEquals(CorrectionHealth.OK, at(750, null, RtkStatus.SINGLE))
+    }
+
+    @Test fun `a short custom limit (1-2 s) can still clear aging (review M1)`() {
+        for (limit in listOf(1.0, 2.0)) {
+            val short = CorrectionHealthTracker(agingS = limit)
+            assertEquals(CorrectionHealth.AGING, short.update(true, limit + 0.5, RtkStatus.FIX, 0))
+            short.update(true, 0.2, RtkStatus.FIX, 1_000)
+            assertEquals("limit $limit s clears after the hold", CorrectionHealth.OK, short.update(true, 0.2, RtkStatus.FIX, 5_000))
+        }
     }
 
     @Test fun `aging threshold is capped at stale and invalid ages are not reported`() {

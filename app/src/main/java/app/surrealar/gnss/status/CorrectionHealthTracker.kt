@@ -20,7 +20,8 @@ import io.github.pennstatecs.geokit.gnss.model.RtkStatus
  * - a LESS severe state is entered only when the age is at least [marginS] below the threshold it is leaving (or
  *   corrections are reported again, for UNAVAILABLE) and that has held continuously for [holdMs].
  *
- * [reset] (or an update with `applicable = false`) forgets everything: call it when the source or receiver changes.
+ * [reset] forgets everything: call it when the source or receiver changes. An update with `applicable = false` only
+ * clears the current warning (nothing to warn about without a live external fix) and keeps "corrections were seen".
  */
 class CorrectionHealthTracker(
     agingS: Double,
@@ -47,7 +48,10 @@ class CorrectionHealthTracker(
      * @param ageS the fix's correction age (s); null / negative / NaN = not reported
      */
     fun update(applicable: Boolean, ageS: Double?, rtkStatus: RtkStatus, nowMs: Long): CorrectionHealth {
-        if (!applicable) { reset(); return current }
+        // Not applicable (a fix dropout, a lost/stale display, a reconnect blip): no warning shown now, but KEEP the
+        // knowledge that this receiver delivered corrections, so "Corrections unavailable" still appears after the
+        // blip (review M3). Only [reset] (source / receiver change) forgets it.
+        if (!applicable) { current = CorrectionHealth.OK; relaxSinceMs = null; return current }
         val age = ageS?.takeIf { it.isFinite() && it >= 0.0 }
         if (age != null) seenCorrections = true
         val raw = classify(age, rtkStatus, agingS, staleS)
@@ -56,8 +60,9 @@ class CorrectionHealthTracker(
             relaxSinceMs = null
             return current
         }
-        // Less severe: only once clear of the threshold by the margin, continuously for holdMs.
-        val relaxed = classify(age, rtkStatus, agingS - marginS, staleS - marginS)
+        // Less severe: only once clear of the threshold by the margin, continuously for holdMs. The margin is at most
+        // half the threshold, so a short custom limit (e.g. 1–2 s) can still clear (review M1).
+        val relaxed = classify(age, rtkStatus, agingS - minOf(marginS, agingS / 2), staleS - minOf(marginS, staleS / 2))
         if (relaxed.rank >= current.rank) { relaxSinceMs = null; return current }
         val since = relaxSinceMs ?: nowMs.also { relaxSinceMs = it }
         if (nowMs - since >= holdMs) {

@@ -682,6 +682,8 @@ class MainActivity : AppCompatActivity(), app.surrealar.ui.toolbar.report.GnssSt
                         }
                         val source = runCatching { settingsRepository.locationSource.first() }.getOrDefault(LocationSourceType.INTERNAL)
                         toolbarRenderer.render(GnssToolbarStateMapper.error(source, externalReceiverLabel))
+                        // The report must not keep showing the previous frame while the pipeline is failing (review L8).
+                        toolbarFrames.value = null
                     }
                     .collect()
             }

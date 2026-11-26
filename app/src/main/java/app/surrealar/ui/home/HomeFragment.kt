@@ -399,6 +399,18 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         b.textCoordinateSettingsNote.visibility = if (s.note != null) android.view.View.VISIBLE else android.view.View.GONE
     }
 
+    /**
+     * The toolbar pipeline's stabilised correction health (same value the toolbar and the GNSS Status report use), or
+     * null when the host has no toolbar (Home then falls back to its raw stale rule).
+     */
+    private fun toolbarCorrectionHealth(): kotlinx.coroutines.flow.Flow<app.surrealar.gnss.status.CorrectionHealth?> {
+        val host = activity as? app.surrealar.ui.toolbar.report.GnssStatusHost
+            ?: return kotlinx.coroutines.flow.flowOf(null)
+        return host.gnssToolbarFrames.map { frame ->
+            (frame?.result as? app.surrealar.ui.toolbar.ToolbarMapResult.Render)?.state?.correctionHealth
+        }.distinctUntilChanged()
+    }
+
     private fun setupFieldStatusObserver() {
         binding.btnFieldStatusAction.setOnClickListener {
             val dest = when (currentFieldStatusAction) {
@@ -430,10 +442,12 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     ) { fix, source, receiver, diag, sky -> FieldInputs(fix, source, receiver, diag, sky) }
                     .combine(receiverConnection.state) { f, conn -> f to conn }
                     .combine(tiltMonitor.status) { (f, conn), tilt -> Triple(f, conn, tilt) }
-                    .combine(receiverConnection.liveSource) { (f, conn, tilt), live ->
+                    .combine(receiverConnection.liveSource) { (f, conn, tilt), live -> Pair(Triple(f, conn, tilt), live) }
+                    .combine(toolbarCorrectionHealth()) { (t, live), corrections ->
+                        val (f, conn, tilt) = t
                         val recentErrors = viewModel.parseErrorWindow.update(
                             android.os.SystemClock.elapsedRealtime(), f.diag.totalParseErrors)
-                        buildFieldStatus(f.fix, f.source, f.receiver, f.diag, f.sky, conn, tilt, recentErrors, live)
+                        buildFieldStatus(f.fix, f.source, f.receiver, f.diag, f.sky, conn, tilt, recentErrors, live, corrections)
                     }.distinctUntilChanged()   // diagnostics tick every second; rebuild the chips only on a real change
                         .collectLatest { status ->
                         val b = _binding ?: return@collectLatest
@@ -465,6 +479,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         tilt: app.surrealar.receiver.tilt.TiltStatus?,
         recentParseErrors: Long,
         liveSource: app.surrealar.receiver.selection.LiveSourceState? = null,
+        correctionHealth: app.surrealar.gnss.status.CorrectionHealth? = null,
     ): HomeFieldStatusMapper.FieldStatus = HomeFieldStatusInputs.build(
         snapshot = viewModel.snapshotOf(fix),
         fixProvider = fix?.provider,
@@ -476,6 +491,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         tilt = tilt,
         recentParseErrors = recentParseErrors,
         liveSource = liveSource,
+        correctionHealth = correctionHealth,
     ).let { HomeFieldStatusMapper.map(it) }.also { status ->
         app.surrealar.gnss.debug.GnssDebugLog.every("home.fieldStatus", "toolbar") {
             "Home Field Status: '${status.headline}' ${status.additionalWarnings} / '${status.primaryDetail}' / " +

@@ -245,7 +245,7 @@ object GnssStatusReportPresenter {
             else -> when (s?.correctionHealth ?: CorrectionHealth.OK) {
                 CorrectionHealth.OK -> ReportRow("Health", if (age != null) "Within limits" else "No correction age reported")
                 CorrectionHealth.AGING -> ReportRow("Health", "Corrections aging",
-                    note = "Older than ${trim(agingS)} s: capture stops accepting fixes", level = ReportLevel.CAUTION)
+                    note = "Older than ${trim(agingS)} s: captures that require fresh corrections stop accepting fixes", level = ReportLevel.CAUTION)
                 CorrectionHealth.STALE -> ReportRow("Health", "Corrections stale",
                     note = "Older than ${trim(staleS)} s: RTK accuracy is no longer assured", level = ReportLevel.WARNING)
                 CorrectionHealth.UNAVAILABLE -> ReportRow("Health", "Corrections unavailable",

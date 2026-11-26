@@ -42,6 +42,8 @@ internal class FakeGnssStatusDeps(
     override val tilt: MutableStateFlow<TiltStatus> = MutableStateFlow(TiltStatus.NONE),
     override val diagnostics: MutableStateFlow<DiagnosticData> = MutableStateFlow(DiagnosticData(linesPerSecond = 10.0, totalLinesProcessed = 100)),
 ) : GnssStatusDeps {
+    // The report is built on Default in the app; here on the main looper so updates are observable after idleMain().
+    override val computeDispatcher: kotlinx.coroutines.CoroutineDispatcher get() = kotlinx.coroutines.Dispatchers.Main
     var toggles = 0
     var receiverOpens = 0
     override fun toggleCoordinates() { toggles++ }

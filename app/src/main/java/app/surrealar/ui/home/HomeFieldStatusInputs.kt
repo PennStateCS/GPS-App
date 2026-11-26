@@ -42,6 +42,8 @@ object HomeFieldStatusInputs {
          * external receivers apart, which the fix's provider alone cannot. Null = provider-based rules only.
          */
         liveSource: app.surrealar.receiver.selection.LiveSourceState? = null,
+        /** The toolbar pipeline's stabilised correction health (shared with the toolbar and the report). */
+        correctionHealth: app.surrealar.gnss.status.CorrectionHealth? = null,
     ): HomeFieldStatusMapper.Inputs {
         val externalSelected = source != LocationSourceType.INTERNAL
         val savedHost = receiver.tcpHost.takeIf { it.isNotBlank() }
@@ -106,6 +108,7 @@ object HomeFieldStatusInputs {
             hAccEstimated = false,
             live = resolved.live,
             link = resolved.link,
+            correctionHealth = if (externalLive) correctionHealth else null,
         )
     }
 }
