@@ -301,12 +301,15 @@ class AndroidMockLocationPublisherTest {
     }
 
     @Test fun `missing accuracy falls back by solution type, not a flat 5 m`() {
-        assertEquals(0.05f, publisher.fallbackHorizontalAccuracyM(RtkStatus.FIX), 0f)
+        // Conservative estimate floors: RTK fixed without a receiver accuracy is decimetre, not cm-level.
+        assertEquals(0.10f, publisher.fallbackHorizontalAccuracyM(RtkStatus.FIX), 0f)
         assertEquals(0.5f, publisher.fallbackHorizontalAccuracyM(RtkStatus.FLOAT), 0f)
         assertEquals(1.5f, publisher.fallbackHorizontalAccuracyM(RtkStatus.DGPS), 0f)
         assertEquals(5.0f, publisher.fallbackHorizontalAccuracyM(RtkStatus.SINGLE), 0f)
         val loc = publisher.fixToLocation(externalFix(hAccM = null))   // externalFix is RTK FIX
-        assertEquals(0.05f, loc.accuracy, 0f)
+        assertEquals(0.10f, loc.accuracy, 0f)
+        assertEquals(AndroidMockLocationPublisher.ACCURACY_ESTIMATED,
+            loc.extras?.getString(AndroidMockLocationPublisher.EXTRA_ACCURACY_SOURCE))
     }
 
     @Test fun `elapsed realtime is back-dated by a plausible fix age`() {

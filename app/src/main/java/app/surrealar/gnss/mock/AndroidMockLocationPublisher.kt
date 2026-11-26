@@ -10,6 +10,8 @@ import android.os.SystemClock
 import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.gnss.bus.FixSwitchboard
+import io.github.pennstatecs.geokit.gnss.accuracy.VerticalAccuracyStatus
+import io.github.pennstatecs.geokit.gnss.accuracy.VerticalAccuracyValidity
 import io.github.pennstatecs.geokit.gnss.capture.FixFreshnessGate
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.Provider
@@ -163,6 +165,11 @@ class AndroidMockLocationPublisher(
                     if (poleTip) "Mock location altitude withheld: receiver positions are (or may be) the tilt-compensated pole tip"
                     else "Mock location altitude published: receiver positions are the antenna"
                 }
+                val heightInvalid = VerticalAccuracyValidity.isInvalid(fix)
+                DiagnosticsLogger.logOnChange(DIAG, "mock.heightInvalid", heightInvalid) {
+                    if (heightInvalid) "Mock location altitude withheld: receiver vertical accuracy is an invalid marker"
+                    else "Mock location receiver vertical accuracy usable"
+                }
                 publishLocation(fix, fixToLocation(fix, antennaAboveCameraM, omitAltitude = poleTip))
             }
         }
@@ -260,23 +267,26 @@ class AndroidMockLocationPublisher(
 
             // Android Location.altitude is WGS84 ellipsoidal (what ARCore expects). The fix is the
             // antenna; ARCore treats the location as the device, so lower it to the camera.
-            if (!omitAltitude) fix.altEllipsoidalM?.let { altitude = it - antennaAboveCameraM }
+            // An epoch whose vertical accuracy is an invalid marker (e.g. Emlid 999 m: receiver height
+            // corrections interrupted) has no usable height, so its altitude is withheld like a pole tip's.
+            val heightUsable = !omitAltitude && !VerticalAccuracyValidity.isInvalid(fix)
+            if (heightUsable) fix.altEllipsoidalM?.let { altitude = it - antennaAboveCameraM }
             fix.speedMps?.let       { speed = it.toFloat() }
             fix.courseDeg?.let      { bearing = it.toFloat() }
 
-            // accuracy is mandatory — setTestProviderLocation throws if it is unset (0f). The receiver's
-            // own 68 % radius when it sends one; else the app-wide DOP × UERE estimate for the fix's
-            // accuracy class (same number the toolbar shows); the flat per-status value only when HDOP
-            // is missing too.
-            accuracy = fix.hAccM?.toFloat()?.takeIf { it > 0f }
-                ?: io.github.pennstatecs.geokit.gnss.accuracy.AccuracyEstimator.estimate1SigmaMeters(fix, uere)
-                    .horizontalMeters?.toFloat()?.takeIf { it > 0f }
-                ?: fallbackHorizontalAccuracyM(fix.rtkStatus)
+            // accuracy is mandatory — setTestProviderLocation throws if it is unset (0f). See
+            // horizontalAccuracyFor: the receiver's own 68 % radius when it reports a usable one, else a
+            // conservative ESTIMATE, flagged as such in the extras (Android has no provenance field).
+            val h = horizontalAccuracyFor(fix)
+            accuracy = h.meters
+            extras = android.os.Bundle().apply { putString(EXTRA_ACCURACY_SOURCE, h.source) }
 
             // No altitude → no vertical accuracy either (a vertical accuracy without an altitude would
-            // describe a height that is not there).
-            if (!omitAltitude && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                fix.vAccM?.let { verticalAccuracyMeters = it.toFloat() }
+            // describe a height that is not there). Only a valid receiver value is passed on: never a
+            // NaN / ≤ 0 / 999 m marker, and never an estimate.
+            if (heightUsable && hasAltitude() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                fix.vAccM?.takeIf { VerticalAccuracyValidity.classify(it) == VerticalAccuracyStatus.VALID }
+                    ?.let { verticalAccuracyMeters = it.toFloat() }
             }
 
             // time = the fix's GNSS epoch. elapsedRealtimeNanos is the monotonic clock fusion engines
@@ -292,13 +302,44 @@ class AndroidMockLocationPublisher(
 
     private val uere = io.github.pennstatecs.geokit.gnss.accuracy.UereTable()
 
+    /** The horizontal accuracy put on a mock [Location] and where it came from ([ACCURACY_REPORTED] / [ACCURACY_ESTIMATED]). */
+    internal data class HorizontalAccuracy(val meters: Float, val source: String) {
+        val estimated: Boolean get() = source == ACCURACY_ESTIMATED
+    }
+
+    /** The receiver-reported horizontal accuracy (68 % radius, m) when usable: finite and > 0; else null. */
+    internal fun reportedHorizontalAccuracyM(fix: Fix): Double? =
+        fix.hAccM?.takeIf { it.isFinite() && it > 0.0 && it.toFloat().isFinite() && it.toFloat() > 0f }
+
     /**
-     * Placeholder horizontal accuracy (m, ~68%) by solution type when there's no receiver accuracy and
-     * no HDOP to estimate one from.
-     * Conservative for each class: RTK fixed is cm-level, float decimetres, DGPS ~1 m.
+     * Horizontal accuracy for the mock location (always finite and > 0, as Android requires).
+     *
+     * - Receiver reported a usable value → that value, source [ACCURACY_REPORTED].
+     * - Otherwise an ESTIMATE, source [ACCURACY_ESTIMATED]: the app-wide DOP × UERE number when HDOP is known,
+     *   but never smaller than the conservative per-status floor [fallbackHorizontalAccuracyM]; the floor alone
+     *   when there is no HDOP. An RTK status without a receiver accuracy proves nothing about the actual error
+     *   (wrong-fix ambiguity, base-coordinate error, multipath), so an estimate never claims cm-level accuracy:
+     *   ARCore and other clients weight a location by this number, and an optimistic value would make them
+     *   trust it more than the receiver itself vouched for.
+     */
+    internal fun horizontalAccuracyFor(fix: Fix): HorizontalAccuracy {
+        reportedHorizontalAccuracyM(fix)?.let { return HorizontalAccuracy(it.toFloat(), ACCURACY_REPORTED) }
+        val floor = fallbackHorizontalAccuracyM(fix.rtkStatus)
+        // Strip the unusable receiver values so the estimator goes to DOP × UERE (it returns any present
+        // hAcc/vAcc as-is, e.g. a NaN hAcc or a 999 m vAcc with no hAcc). Estimation input only.
+        val dopEstimate = io.github.pennstatecs.geokit.gnss.accuracy.AccuracyEstimator
+            .estimate1SigmaMeters(fix.copy(hAccM = null, vAccM = null), uere)
+            .horizontalMeters?.toFloat()?.takeIf { it.isFinite() && it > 0f }
+        return HorizontalAccuracy(maxOf(dopEstimate ?: floor, floor), ACCURACY_ESTIMATED)
+    }
+
+    /**
+     * Conservative horizontal accuracy floor (m, ~68 %) for an ESTIMATE by solution type, used when the receiver
+     * reports no usable accuracy. Deliberately pessimistic: RTK fixed 0.10 m (decimetre, not cm-level: the status
+     * alone does not verify the fix), float 0.5 m, DGPS 1.5 m, anything else 5 m.
      */
     internal fun fallbackHorizontalAccuracyM(status: io.github.pennstatecs.geokit.gnss.model.RtkStatus): Float = when (status) {
-        io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX   -> 0.05f
+        io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX   -> 0.10f
         io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT -> 0.5f
         io.github.pennstatecs.geokit.gnss.model.RtkStatus.DGPS  -> 1.5f
         else -> 5.0f
@@ -320,9 +361,9 @@ class AndroidMockLocationPublisher(
             locationManager.setTestProviderLocation(LocationManager.GPS_PROVIDER, location)
 
             // Accuracy is a REQUIRED, non-zero field on the Android test provider, so when the source
-            // fix carries none we inject a placeholder. Record the REAL source accuracy (null if
-            // missing) plus this flag so a missing accuracy is never mistaken for a genuine 0 m fix.
-            val hAccWasFallback = fix.hAccM?.let { it > 0.0 } != true
+            // fix carries no usable one we inject an estimate. Record the REAL source accuracy (null if
+            // missing) plus this flag so a missing accuracy is never mistaken for a receiver-measured one.
+            val hAccWasFallback = reportedHorizontalAccuracyM(fix) == null
             val fixTimeMs = fix.timeUtc.toEpochMilli()
             MockInjectionStatus.apply {
                 providerActive = true
@@ -357,7 +398,7 @@ class AndroidMockLocationPublisher(
 
     /**
      * Injection logging (fixes arrive at up to 10 Hz; the in-memory status updates every fix):
-     * - I when the injected state (rtk, hAcc bucket, altitude set, placeholder accuracy) changes and
+     * - I when the injected state (rtk, hAcc bucket, altitude set, reported/estimated accuracy) changes and
      *   holds [INJECT_STATE_HOLD_MS], plus a heartbeat every [INJECT_HEARTBEAT_MS];
      * - the full timing detail at D (debug builds only), at most every [INJECT_DETAIL_INTERVAL_MS].
      * Coordinates appear only in the debug-only GnssDebugLog trace; the DiagnosticsLogger lines carry
@@ -366,7 +407,7 @@ class AndroidMockLocationPublisher(
     private fun logInjection(fix: Fix, location: Location, fixTimeMs: Long, appRecvMs: Long, hAccWasFallback: Boolean) {
         val hAcc = GnssFeedTracker.hAccBucket(fix.hAccM)
         val altitude = if (location.hasAltitude()) "set" else "none"
-        val accuracy = if (hAccWasFallback) "placeholder" else "receiver"
+        val accuracy = if (hAccWasFallback) ACCURACY_ESTIMATED else ACCURACY_REPORTED
         val summary = { "MOCK_LOCATION_INJECTED rtk=${fix.rtkStatus} hAcc=$hAcc accuracy=$accuracy altitude=$altitude " +
             "sourceProvider=${fix.provider} injections=${MockInjectionStatus.injectionCount}" }
         DiagnosticsLogger.logOnChange(DIAG, "mock.inject.state", listOf(fix.rtkStatus, hAcc, altitude, accuracy),
@@ -382,7 +423,7 @@ class AndroidMockLocationPublisher(
                 "backdatedMs=${backdatedMs ?: "none"} altitude=$altitude " +
                 "antennaAboveCameraM=${"%.2f".format(antennaAboveCameraM)} " +
                 "hAccM=${fix.hAccM?.let { "%.2f".format(it) } ?: "unknown"}" +
-                (if (hAccWasFallback) " placeholderAccM=${location.accuracy}" else "") +
+                (if (hAccWasFallback) " estimatedAccM=${location.accuracy}" else "") +
                 " vAccM=${fix.vAccM?.let { "%.2f".format(it) } ?: "unknown"} rtk=${fix.rtkStatus}"
         }
     }
@@ -488,9 +529,15 @@ class AndroidMockLocationPublisher(
     }
 
     companion object {
+        /** Location extras key: where the horizontal accuracy came from ([ACCURACY_REPORTED] / [ACCURACY_ESTIMATED]). */
+        const val EXTRA_ACCURACY_SOURCE = "accuracySource"
+        /** The receiver reported the horizontal accuracy (68 % radius). */
+        const val ACCURACY_REPORTED = "reported"
+        /** No usable receiver accuracy: a conservative app estimate (never receiver-measured). */
+        const val ACCURACY_ESTIMATED = "estimated"
         /** Diagnostic export tag for all mock-location lifecycle/injection events. */
         private const val DIAG = "GNSS"
-        /** An injected state change (rtk / hAcc bucket / altitude / placeholder) must hold this long to be logged. */
+        /** An injected state change (rtk / hAcc bucket / altitude / accuracy source) must hold this long to be logged. */
         private const val INJECT_STATE_HOLD_MS = 5_000L
         /** Injection heartbeat line while publishing, even when nothing changed. */
         private const val INJECT_HEARTBEAT_MS = 300_000L
