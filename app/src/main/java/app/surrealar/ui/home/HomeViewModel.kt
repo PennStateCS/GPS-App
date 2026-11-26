@@ -51,50 +51,14 @@ class HomeViewModel @Inject constructor(
      * FixBadgeView. This ensures the badge always reflects whichever source is selected, rather
      * than the legacy FixAccumulator which was never connected to the live data path.
      */
-    private fun Fix.toFixSnapshot() = FixSnapshot(
-        timestampMillis      = timeUtc.toEpochMilli(),
-        timestampSource      = timestampSource,
-        lat                  = latDeg,
-        lon                  = lonDeg,
-        altMsl               = altMslM,
-        geoidSeparation      = geoidSeparationM,
-        altEllipsoidal       = altEllipsoidalM,
-        speedMps             = speedMps,
-        courseDeg            = courseDeg,
-        satsUsed             = satsUsed,
-        hdop                 = hDop,
-        vDop                 = vDop,
-        pDop                 = pDop,
-        satellitesInView     = satsVisible,
-        horizontalAccuracyM  = hAccM,
-        verticalAccuracyM    = vAccM,
-        correctionAgeS       = diffAgeS,
-        correctionStationId  = correctionStationId,
-        multipathIndex       = multipathIndex,
-        rtkStatus            = rtkStatus.name,
-        stdLatM              = null,
-        stdLonM              = null,
-        stdAltM              = null
-    )
+    private fun Fix.toFixSnapshot() = FixSnapshots.of(this)
 
     /**
      * Exposes the current GNSS fix snapshot with position data, quality metrics, and timestamp.
      * Derived from [FixSwitchboard.fixes] so it automatically reflects the active provider
      * (internal GPS or RS2+) as set in Settings.
      */
-    private val emptySnapshot = FixSnapshot(
-        timestampMillis = 0L,
-        timestampSource = TimestampSource.DEVICE,
-        lat = null, lon = null,
-        altMsl = null, geoidSeparation = null, altEllipsoidal = null,
-        speedMps = null, courseDeg = null,
-        satsUsed = null, hdop = null,
-        vDop = null, pDop = null,
-        satellitesInView = null, horizontalAccuracyM = null,
-        verticalAccuracyM = null, correctionAgeS = null,
-        correctionStationId = null, multipathIndex = null,
-        rtkStatus = null, stdLatM = null, stdLonM = null, stdAltM = null
-    )
+    private val emptySnapshot = FixSnapshots.EMPTY
 
     // Derived from currentFix (not the fixes replay buffer): it goes null on a provider switch and
     // when fixes stop, so the badge / Field Status never present a frozen position as live.

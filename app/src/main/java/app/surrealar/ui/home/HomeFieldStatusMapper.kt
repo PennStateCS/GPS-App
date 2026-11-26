@@ -1,6 +1,7 @@
 package app.surrealar.ui.home
 
 import app.surrealar.gnss.format.GnssStatusFormatter
+import app.surrealar.gnss.status.GnssStatusInterpreter
 import app.surrealar.receiver.tilt.EpochReference
 import app.surrealar.settings.model.CompensatedOutputSetting
 import app.surrealar.ui.home.HomeLiveSource.Link
@@ -38,6 +39,7 @@ import java.util.Locale
  * |15 | Other solution (Single/DGPS/DR/none), reported hAcc > [LOW_ACCURACY_M] | LOW_ACCURACY     | Low accuracy                      | WARNING  |
  * |16 | Other solution (Single/DGPS/DR/none)                             | POSITION_AVAILABLE     | Position available                | NEUTRAL  |
  *
+ * Rows 8–16 come from the shared [GnssStatusInterpreter] (the toolbar and the GNSS Status report use the same one).
  * Only row 11 is GOOD (green), and only when rows 8–10 do not apply. "No live fix" (rows 1–5) means no valid fix
  * from the SELECTED source: a tablet GNSS fix while an external receiver is selected is not shown as the receiver's.
  * External identity (reported name / model) and RTK metrics are attached only to a live external fix.
@@ -46,21 +48,23 @@ import java.util.Locale
 object HomeFieldStatusMapper {
 
     /** Reported horizontal accuracy (m, 68 % radius) above which a non-RTK fix is flagged "Low accuracy". */
-    const val LOW_ACCURACY_M = 1.0
+    const val LOW_ACCURACY_M = GnssStatusInterpreter.LOW_ACCURACY_M
 
     /**
      * Reported horizontal accuracy (m, 68 % radius) at or below which an RTK Fixed solution reads "High accuracy".
      * Only a receiver-REPORTED value counts (GST / $..ACCURACY); a missing or estimated value never does.
      */
-    const val HIGH_ACCURACY_H_M = 0.05
+    const val HIGH_ACCURACY_H_M = GnssStatusInterpreter.HIGH_ACCURACY_H_M
 
-    /** Correction age (s) above which RTK corrections are considered stale (matches status bar). */
-    const val STALE_CORRECTION_S = 15.0
+    /** Correction age (s) above which RTK corrections are considered stale (shared with the toolbar). */
+    const val STALE_CORRECTION_S = GnssStatusInterpreter.STALE_CORRECTION_S
 
     /** Field-status state shown on the Home card (see the precedence table in the class KDoc). */
     enum class State {
         WAITING, CONNECTING, RECONNECTING, NO_RECEIVER_DATA, INTERNAL_GPS, REPLAY,
         CORRECTIONS_STALE, REFERENCE_UNCONFIRMED, VERTICAL_INVALID,
+        /** Toolbar-only correction states of the shared interpreter; Home never produces them (raw staleness only). */
+        CORRECTIONS_UNAVAILABLE, CORRECTIONS_AGING,
         HIGH_ACCURACY, FIX_UNVERIFIED, ACCURACY_BELOW_TARGET, FLOAT, LOW_ACCURACY, POSITION_AVAILABLE,
     }
 
@@ -204,60 +208,55 @@ object HomeFieldStatusMapper {
         val receiverDetail = liveReceiverDetail(i)
         val chips = buildExternalChips(i)
 
-        val warnings = mutableListOf<Triple<State, String, Severity>>()
-        if (correctionsStale(i)) warnings += Triple(State.CORRECTIONS_STALE, "Corrections stale", Severity.WARNING)
-        when (i.positionReference) {
-            PositionReference.MAY_BE_COMPENSATED ->
-                warnings += Triple(State.REFERENCE_UNCONFIRMED, "Position reference unconfirmed", Severity.WARNING)
-            PositionReference.UNCONFIRMED ->
-                warnings += Triple(State.REFERENCE_UNCONFIRMED, "Position reference unconfirmed", Severity.CAUTION)
-            else -> Unit
+        // Rows 8–16: the shared interpretation (also used by the toolbar and the GNSS Status report). Home uses the
+        // raw staleness rule (no hysteresis), so only rows 8–10 can produce a warning here.
+        val interp = interpret(i)
+        interp.warnings.firstOrNull()?.let { w ->
+            return FieldStatus(stateOf(w), w.text, primary, receiverDetail, chips, severityOf(w.severity), openMap,
+                Action.OPEN_MAP, additionalWarnings = interp.warnings.drop(1).map { it.text })
         }
-        if (i.vAccInvalid) warnings += Triple(State.VERTICAL_INVALID, "Vertical accuracy invalid", Severity.CAUTION)
-
-        warnings.firstOrNull()?.let { (state, headline, severity) ->
-            return FieldStatus(state, headline, primary, receiverDetail, chips, severity, openMap, Action.OPEN_MAP,
-                additionalWarnings = warnings.drop(1).map { it.second })
-        }
-
-        val reportedH = i.hAccM?.takeIf { !i.hAccEstimated && it.isFinite() && it >= 0.0 }
-        val (state, headline, severity) = when (i.rtkStatus) {
-            RtkStatus.FIX -> when {
-                reportedH == null -> Triple(State.FIX_UNVERIFIED, "RTK Fixed — accuracy unverified", Severity.CAUTION)
-                reportedH <= HIGH_ACCURACY_H_M -> Triple(State.HIGH_ACCURACY, "High accuracy", Severity.GOOD)
-                else -> Triple(State.ACCURACY_BELOW_TARGET, "Accuracy below target", Severity.CAUTION)
-            }
-            RtkStatus.FLOAT -> Triple(State.FLOAT, "RTK Float", Severity.CAUTION)
-            else -> if (reportedH != null && reportedH > LOW_ACCURACY_M)
-                Triple(State.LOW_ACCURACY, "Low accuracy", Severity.WARNING)
-            else Triple(State.POSITION_AVAILABLE, "Position available", Severity.NEUTRAL)
-        }
-        return FieldStatus(state, headline, primary, receiverDetail, chips, severity, openMap, Action.OPEN_MAP)
+        val q = interp.quality
+        return FieldStatus(stateOf(q), q.headline, primary, receiverDetail, chips, severityOf(q.severity), openMap, Action.OPEN_MAP)
     }
 
     /**
      * RS4 / RS4 Pro position reference for Home from the tilt monitor's state; null when not applicable (other
      * receivers, tablet GNSS). Unknown compensated output with no epoch classification reads "unconfirmed".
+     * (Shared rule: [GnssStatusInterpreter.referenceOf].)
      */
     fun positionReferenceOf(
         applicable: Boolean,
         reference: EpochReference?,
         compensatedOutput: CompensatedOutputSetting,
-    ): PositionReference? {
-        if (!applicable) return null
-        return when (reference) {
-            EpochReference.POLE_TIP -> PositionReference.POLE_TIP
-            EpochReference.ANTENNA -> PositionReference.ANTENNA
-            EpochReference.MAY_BE_COMPENSATED -> PositionReference.MAY_BE_COMPENSATED
-            EpochReference.ANTENNA_UNCERTAIN -> PositionReference.UNCONFIRMED
-            EpochReference.NOT_APPLICABLE, null ->
-                if (compensatedOutput == CompensatedOutputSetting.UNKNOWN) PositionReference.UNCONFIRMED else null
-        }
+    ): PositionReference? =
+        GnssStatusInterpreter.referenceOf(applicable, reference, compensatedOutput)?.let { PositionReference.valueOf(it.name) }
+
+    /** The shared interpretation of a live external fix for these inputs (raw staleness, no hysteresis). */
+    fun interpret(i: Inputs): GnssStatusInterpreter.Interpretation = GnssStatusInterpreter.interpret(
+        GnssStatusInterpreter.Inputs(
+            rtkStatus = i.rtkStatus,
+            hAccM = i.hAccM,
+            hAccEstimated = i.hAccEstimated,
+            corrections = GnssStatusInterpreter.rawStale(i.correctionAgeS),
+            reference = i.positionReference?.let { GnssStatusInterpreter.Reference.valueOf(it.name) },
+            vAccInvalid = i.vAccInvalid,
+        )
+    )
+
+    private fun stateOf(w: GnssStatusInterpreter.Warning): State = when (w) {
+        GnssStatusInterpreter.Warning.CORRECTIONS_STALE -> State.CORRECTIONS_STALE
+        GnssStatusInterpreter.Warning.CORRECTIONS_UNAVAILABLE -> State.CORRECTIONS_UNAVAILABLE
+        GnssStatusInterpreter.Warning.CORRECTIONS_AGING -> State.CORRECTIONS_AGING
+        GnssStatusInterpreter.Warning.REFERENCE_MAY_BE_COMPENSATED,
+        GnssStatusInterpreter.Warning.REFERENCE_UNCONFIRMED -> State.REFERENCE_UNCONFIRMED
+        GnssStatusInterpreter.Warning.VERTICAL_INVALID -> State.VERTICAL_INVALID
     }
 
-    private const val INTERNAL_RECEIVER_DETAIL = "Tablet GNSS receiver"
+    private fun stateOf(q: GnssStatusInterpreter.Quality): State = State.valueOf(q.name)
 
-    private fun correctionsStale(i: Inputs): Boolean = i.correctionAgeS != null && i.correctionAgeS > STALE_CORRECTION_S
+    private fun severityOf(s: GnssStatusInterpreter.Severity): Severity = Severity.valueOf(s.name)
+
+    private const val INTERNAL_RECEIVER_DETAIL = "Tablet GNSS receiver"
 
     // ── Detail lines ──────────────────────────────────────────────────────────────────────────
 
