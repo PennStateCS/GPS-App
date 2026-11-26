@@ -162,7 +162,8 @@ Settings > Receiver
   `Tablet GNSS` · `On this network` (scan status, "Last scanned …", Scan / Rescan, results labelled
   "Emlid Reach (model confirmed after connecting)") · `Previously connected` (name, host:port, last reported model
   "(reported by receiver)" or the profile "(set by you)", last connected, Forget) · `Connect manually…`.
-  Rows show Active / Testing… / Not found in last scan / Failed: reason. A tap calls `connect()` (recent and scan
+  Rows show In use (tablet) / Connected / Connecting… / Reconnecting… / Selected · unavailable / Selected · not
+  connected / Testing… / Not found in last scan / Failed: reason (see "Stabilization" below). A tap calls `connect()` (recent and scan
   rows: profile unchanged, so the stored profile and its origin stay; identification corrects it) or `selectInternal()`; the sheet stays open and
   follows the state. During a capture the user is asked "Switching receivers stops the current capture. Switch?"
   (`NEEDS_CAPTURE_CONFIRMATION` → `connect(..., confirmCaptureStop = true)`; Tablet GNSS asks the same before
@@ -228,13 +229,37 @@ Settings > Receiver
   profile dropdown, host/port fields, Connect and Disconnect buttons, the status rows, the device-info panel with its
   Refresh button and self-test grid, and the background diagnostic probe. Their functions moved: source switch and
   connect → picker; host/port/profile → manual dialog; status → card; device info → details; Disconnect → details.
-- Kept unchanged below the card: Compensated NMEA output (RS4 / RS4 Pro) and tilt status, pole height, camera
-  distance, phase-centre offset, the pole-height notice, tablet antenna height, mock location and its error banner.
+- Kept below the card: Compensated NMEA output (RS4 / RS4 Pro) and tilt status, pole height, the pole-height
+  notice, tablet antenna height; camera distance, phase-centre offset, mock location and its error banner moved into
+  the collapsible Advanced card (see Stabilization).
 - No setting key, value or default changed. The page no longer writes `external_tcp_name` from the receiver's mDNS
   name or device info (the card shows the receiver-reported name from the core instead).
 - Unchanged behaviour: once per Settings screen, with External saved, the saved receiver is reconnected (test before
   switch) unless the user already acted on the page or a test is running; with tablet GNSS saved, the device provider
   is made active.
+
+### Stabilization (survey/stab-s4)
+
+- **Status vocabulary.** Card chip: In use (tablet GNSS) / Selected, not connected (a receiver is saved but no
+  connection runs for it, e.g. before the first connect; Retry is offered) / Testing… / Connecting… / Connected /
+  Connected and streaming (connected AND a live position from that receiver) / Reconnecting… / Unavailable (adapter
+  active, link down) / Failed: reason. The picker's saved-receiver row follows the real link (Connected / Connecting… /
+  Reconnecting… / Selected · unavailable / Selected · not connected); it used to say "Active" whenever the saved target
+  matched and the external provider was active, even with the link down.
+- **Identity labels.** The card's model tag says what the label is: Receiver-confirmed model (reported by the
+  connected receiver at the saved host) / Profile set by you (not confirmed) / Default profile (not confirmed) /
+  Previously reported model / Model unknown. A profile is never shown as a verified identity. Picker recent rows say
+  "(previously reported by the receiver)" or "profile (not confirmed by the receiver)".
+- **Page hierarchy.** Card first; then "Receiver setup" with the RS4 / RS4 Pro compensated NMEA output (never hidden)
+  and the pole height; then a collapsible **Advanced** card (collapsed by default, state remembered for the app session,
+  expanded automatically when a mock-location error is shown) with the camera-below-receiver distance, the manual
+  phase-centre override, Android mock-location publishing and a short troubleshooting note with "Open GNSS
+  diagnostics". Long static texts were shortened. No setting key, value or default changed.
+- **Details sheet updates in place.** Rows are keyed by section + label (`DetailsRowKeys`); when only values change
+  (NMEA rate, correction age, battery) the existing row views are updated, so scroll position, expanded sections and
+  TalkBack focus are kept. Views are rebuilt only when rows appear/disappear, a section is expanded or the column count
+  changes; a rebuild restores the scroll offset and puts accessibility focus back on the toggled header.
+- Home's Field Status rules are in [home-field-status.md](home-field-status.md).
 
 ### Device-only checks
 
