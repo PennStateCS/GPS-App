@@ -132,6 +132,8 @@ internal class RawNmeaRecordingSection(
         val st = recorder.state.value
         val avail = recorder.availability.value
         val recording = st is RawNmeaState.Recording
+        // Keep the screen on while recording: a screen timeout would otherwise end the recording (LIFECYCLE).
+        v.start.keepScreenOn = recording
         v.availability.text = RawNmeaUiText.availability(avail)
         v.start.isEnabled = !recording && avail is RawNmeaAvailability.Available
         v.stop.isEnabled = recording

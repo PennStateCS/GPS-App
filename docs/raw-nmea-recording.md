@@ -213,3 +213,7 @@ Tablet acceptance checklist section 14 ([geodesy/tablet-acceptance-checklist.md]
 the real RS4 Pro stream and counters, no effect on live positions/tilt status, the share sheet, stop on
 leave / background / screen off, continue on rotation, disconnect and source-change endings, and the 10 MB limit at
 a high output rate.
+
+**Screen timeout:** while a recording runs, the Developer page keeps the screen on (View.keepScreenOn), so the
+tablet's screen timeout does not end a 60 s or manual recording. Turning the screen off by hand, leaving the page or
+backgrounding the app still ends it as `LIFECYCLE` (incomplete).
