@@ -22,6 +22,10 @@ class AddModelDialogFragment : DialogFragment() {
         private const val ARG_FILE_PATH = "file_path"
         private const val ARG_FILE_SIZE = "file_size"
 
+        /** Shown when Add is tapped on a dialog recreated after rotation or process death (nothing can save it). */
+        internal const val INTERRUPTED_MESSAGE =
+            "Model import was interrupted (screen rotated or app restarted). Please import the file again."
+
         fun newInstance(
             defaultName: String,
             fileName: String,
@@ -90,6 +94,11 @@ class AddModelDialogFragment : DialogFragment() {
                 if (name.isNotEmpty() && callback != null) {
                     saved = true
                     callback.invoke(name, description)
+                } else if (callback == null) {
+                    // Say so instead of silently doing nothing: the staged copy is removed in onDismiss (or, after
+                    // process death, by the start-up orphan sweep once older than its grace period).
+                    DiagnosticsLogger.w("MODEL", "Model import interrupted: dialog recreated without its save callback")
+                    android.widget.Toast.makeText(requireContext(), INTERRUPTED_MESSAGE, android.widget.Toast.LENGTH_LONG).show()
                 }
             }
             .setNegativeButton("Cancel", null)

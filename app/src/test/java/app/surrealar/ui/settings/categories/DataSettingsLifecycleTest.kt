@@ -71,6 +71,8 @@ class DataSettingsLifecycleTest {
 
     /** The import seam: records the call, then runs [importBody]. */
     private var importCalls = 0
+    /** The partial-import confirmation the controller passed with the last import. */
+    private var partialConfirm: (suspend (BackupImportPlan) -> Boolean)? = null
     private var importBody: suspend (Boolean, suspend (BackupImportPlan, Int) -> PartialReplaceDecision) -> BackupImportPlan =
         { _, _ -> plan(ImportMode.MERGE) }
 
@@ -85,7 +87,7 @@ class DataSettingsLifecycleTest {
         Mockito.mock(CoordinateSystemService::class.java), Mockito.mock(ExportCoordinateBackupUseCase::class.java),
         Mockito.mock(ImportCoordinateBackupUseCase::class.java), saveScope,
         NoopLauncher(), NoopLauncher(), NoopLauncher(),
-        runImport = { _, replace, confirm -> importCalls++; importBody(replace, confirm) })
+        runImport = { _, replace, confirm, confirmPartial -> importCalls++; partialConfirm = confirmPartial; importBody(replace, confirm) })
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
@@ -185,6 +187,25 @@ class DataSettingsLifecycleTest {
         assertTrue("merge/replace asked", pumpUntil { ShadowDialog.getLatestDialog()?.isShowing == true })
         (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_NEUTRAL).performClick()
         idle()
+    }
+
+    @Test fun `a merge that would skip invalid entries is shown with the entries before anything is written`() {
+        var answer: Boolean? = null
+        importBody = { _, _ ->
+            val p = plan(ImportMode.MERGE, skipped = 7)
+            answer = partialConfirm!!(p)
+            if (answer == true) p else p.copy(cancelled = true)
+        }
+        val c = controller()
+        show(c)
+        c.onImportResult(backupFile())                         // no local points: merges straight away
+        assertTrue("asked", pumpUntil { (ShadowDialog.getLatestDialog() as? AlertDialog)?.let { it.isShowing &&
+            it.getButton(DialogInterface.BUTTON_POSITIVE)?.text == "Import 2 valid" } == true })
+        val message = (ShadowDialog.getLatestDialog() as AlertDialog).findViewById<TextView>(android.R.id.message)?.text.toString()
+        assertTrue(message, message.contains("Only 2 of 9") && message.contains("• bad 0") && message.contains("… and 2 more"))
+        (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
+        assertTrue(pumpUntil { answer != null })
+        assertEquals("cancel writes nothing", false, answer)
     }
 
     @Test fun `partial-replace confirmation is still asked after the Data view is gone`() {
