@@ -5,6 +5,9 @@ How colour and text are chosen in the app, what is enforced by tests, and how to
 remaining screens (`feature/visual-p2`): badges / status text / charts / AR and map overlays on semantic or named
 roles, the remaining raw text sizes on the type scale, layout fixes for 1.3x / 1.5x font scale, and a Kotlin colour
 guard. The [Audit](#audit) records what was done and the [intentional exceptions](#intentional-exceptions).
+The **Graphite & Cobalt** pass (`feature/graphite-cobalt-theme`, spec `docs/design/graphite-cobalt-spec.md`) replaced
+the palette values: graphite surfaces, cobalt only for interactive / selected UI, neutral headings, a cyan info role and
+a slate GNSS strip. See [Graphite & Cobalt](#graphite--cobalt).
 
 Scope is visual only: no GNSS, capture, coordinate, database, AR-rendering, receiver or navigation logic changes.
 
@@ -18,31 +21,42 @@ Scope is visual only: no GNSS, capture, coordinate, database, AR-rendering, rece
   are all ≥ 6:1 in practice.
 - **Never colour alone.** Status always also has words and/or an icon (the toolbar pill has an icon + text, report rows
   get a ⚠ prefix, the Home card states the status in words).
-- **Keep the hierarchy.** App bar (darkest navy) → GNSS strip (navy) → page background → cards (surface) → dialogs /
-  menus (surface containers) → overlays. Not everything is pure white or black.
+- **Keep the hierarchy.** App bar (darkest slate) → GNSS strip (slate) → page background → cards (surface) → dialogs /
+  menus (surface containers) → overlays. Not everything is pure white or black. Dark mode is layered graphite
+  (page `#1B202B` < secondary `#252C38` < sidebar `#292F3D` < card `#303746` < elevated `#394253`), not near-black.
+- **Cobalt means interactive.** `colorPrimary` is for buttons, links / text buttons, the selected navigation item,
+  focus, switches and other active controls. Section headings, field labels, descriptions and ordinary values are
+  neutral (`colorOnSurface` / `colorOnSurfaceVariant`).
 
 ## Palette
 
-Material 3 roles stay as they were (they already pass, see the contrast table); the app layer adds semantic status
-roles and toolbar roles.
+Graphite & Cobalt values (full mapping and rationale: `docs/design/graphite-cobalt-spec.md`). The app layer adds
+semantic status roles and toolbar roles.
 
-### Brand / Material 3 roles (unchanged in phase 1)
+### Brand / Material 3 roles
 
 | Role | Light | Dark |
 |---|---|---|
-| App bar (`app_top_app_bar`) | `#071A2D` | `#07121E` |
-| GNSS strip (`app_status_strip`) | `#0F3554` | `#0F3554` |
-| colorPrimary / onPrimary | `#155DA8` / `#FFFFFF` | `#8FC5FF` / `#0F3A63` |
-| colorSecondary | `#00796B` | `#79D7C9` |
-| colorTertiary (amber) | `#7C5800` | `#FBBE4D` |
-| colorError | `#BA1A1A` | `#FFB4AB` |
-| background | `#F4F7FA` | `#0B1117` |
-| surface | `#FFFFFF` | `#101820` |
-| surfaceVariant / surfaceContainer / High / Highest | `#EAF0F6` / `#EAF0F6` / `#DFE7F0` / `#D4DCE8` | `#1D2A36` / `#16212B` / `#1D2A36` / `#243042` |
-| onSurface / onSurfaceVariant | `#1A1C1E` / `#41484D` | `#E2E4E7` / `#C1C8CE` |
-| outline / outlineVariant | `#71787E` / `#C5CED8` | `#8B9198` / `#334454` |
+| App bar (`app_top_app_bar`) / on app bar | `#23354B` / `#FFFFFF` | `#171F2D` / `#FFFFFF` |
+| GNSS strip (`app_status_strip`) | `#2A4158` | `#2A4158` |
+| colorPrimary / onPrimary (cobalt) | `#245BC2` / `#FFFFFF` | `#A8C6FF` / `#0F2A55` |
+| primaryContainer / onPrimaryContainer (tonal chips, selected row) | `#E2EBFC` / `#102F66` | `#293F61` / `#D9E5FF` |
+| colorSecondary (slate) / container / on | `#4A5A70` / `#DCE3ED` / `#1C2533` | `#B9C5D6` / `#3A4658` / `#DCE3ED` |
+| colorTertiary (amber, unchanged) | `#7C5800` | `#FBBE4D` |
+| colorError / errorContainer / on (= status error) | `#B3261E` / `#FCDCDA` / `#5C0B0B` | `#F29A9A` / `#5E2A2D` / `#FCDADA` |
+| background (page) | `#F3F5F8` | `#1B202B` |
+| surface (cards) | `#FFFFFF` | `#303746` |
+| surfaceVariant (settings sidebar) / surfaceContainer (drawer, list pane) | `#E8EAF0` / `#E8EAF0` | `#292F3D` / `#292F3D` |
+| surfaceContainerLowest / Low (secondary, sheets) | `#FFFFFF` / `#EEF2F6` | `#161A23` / `#252C38` |
+| surfaceContainerHigh (menus, dialogs, tiles) / Highest | `#E2E6EC` / `#DADFE7` | `#394253` / `#3C4555` |
+| surfaceDim / surfaceBright | `#D9DDE4` / `#FFFFFF` | `#1B202B` / `#424B5D` |
+| onSurface / onSurfaceVariant | `#202937` / `#515D6C` | `#F0F2F7` / `#C8CED8` |
+| outline (controls) / outlineVariant (card borders, dividers) | `#6B7685` / `#CDD4DE` | `#8D97A8` / `#505B6F` |
+| inverseSurface / inverseOnSurface / inversePrimary | `#2F3644` / `#EEF1F6` / `#A8C6FF` | `#E4E8EF` / `#2A303C` / `#245BC2` |
+| Selected navigation bg (`nav_selected_bg`) / fg | `#E2EBFC` / colorPrimary | `#293F61` / colorPrimary |
 
-No Material role needed a contrast adjustment (before = after).
+Card borders are deliberately subtle (outlineVariant, 1.5 / 1.7:1 on the card): cards are non-interactive groupings and
+also separate by fill; control boundaries use `colorOutline` (≥ 3.8:1).
 
 ### Semantic status roles
 
@@ -58,46 +72,50 @@ Defined in `values/colors.xml` + `values-night/colors.xml`, exposed as theme att
 
 | Role (purpose) | Foreground light | Container / on light | Foreground dark | Container / on dark |
 |---|---|---|---|---|
-| success (RTK Fix, good, pass) | `#1E6B2A` | `#CDEBD2` / `#0B3D14` | `#81C995` | `#1E4D2B` / `#C8F0D0` |
-| warning (Float, aging, caution) | `#9A4700` | `#FFDEA8` / `#2E1A00` | `#F7C66A` | `#5D4100` / `#FFDEA8` |
-| error (no fix, fail, critical) | `#BA1A1A` | `#FFDAD6` / `#410002` | `#FFB4AB` | `#93000A` / `#FFDAD6` |
-| info (DGPS, informational) | `#155DA8` | `#D7E8FF` / `#001B44` | `#9CC8FF` | `#0F3A63` / `#D7E8FF` |
-| neutral (Single, unknown) | `#41484D` | `#E3E7ED` / `#1A1C1E` | `#C1C8CE` | `#2A3644` / `#E2E4E7` |
+| success (RTK Fix, good, pass) | `#17693F` | `#D3EFDF` / `#0B3B22` | `#7DD6A7` | `#1F4A36` / `#C9F2DC` |
+| warning (Float, aging, degraded, caution) | `#8C5000` | `#FBE3B6` / `#3A2400` | `#F2C26B` | `#54401A` / `#FCE4B4` |
+| error (no fix, stale corrections, receiver error) | `#B3261E` | `#FCDCDA` / `#5C0B0B` | `#F29A9A` | `#5E2A2D` / `#FCDADA` |
+| info (DGPS, informational) — cyan, distinct from cobalt | `#00658A` | `#CDEBF6` / `#002C3D` | `#7CCBEF` | `#1D4A5C` / `#C9ECFA` |
+| neutral (Single, waiting / connecting, unknown) | `#515D6C` | `#E3E7EE` / `#202937` | `#C8CED8` | `#3A4252` / `#E4E8EF` |
 
 Legacy names alias the roles: `app_success`, `app_warning`, `app_error`, `app_info` → `status_*`;
 `status_fix` / `status_float` / `status_dgps` / `status_no_fix` → success / warning / info / error (so they now have
-night values); `status_single` gained a night value (`#B0BEC5`).
+night values); `status_single` → `status_neutral`. The receiver card's fix chip uses the same roles (Fix success,
+Float warning, DGPS info containers); Home and the GNSS Status report draw a neutral "waiting" headline in
+`colorStatusNeutral`, not cobalt.
 
 ### GNSS toolbar roles
 
-The strip is `#0F3554` in **both** themes, so these have no night override. They are only for text/icons drawn on the
+The strip is `#2A4158` in **both** themes, so these have no night override. They are only for text/icons drawn on the
 strip (not global semantics). Mapping lives in `ui/toolbar/GnssToolbarColors` (used by `MainActivity.levelColor`).
 
-| Resource | Hex | Use | on `#0F3554` |
+| Resource | Hex | Use | on `#2A4158` |
 |---|---|---|---|
-| `toolbar_on_primary` (= `app_on_status_strip`) | `#F2F6FA` | values | 11.67 |
-| `toolbar_on_secondary` (= `app_on_status_strip_variant`) | `#B8C7D6` | labels, chevron, level NONE | 7.35 |
-| `toolbar_success` | `#81C995` | RTK Fix, good accuracy, battery fill OK | 6.47 |
-| `toolbar_warning` | `#F7C66A` | Float, aging, battery ≤ 30 % | 7.99 |
-| `toolbar_error` | `#FFAAA5` | no fix / error, battery ≤ 15 % | 6.97 |
-| `toolbar_info` | `#9CC8FF` | DGPS / info | 7.31 |
-| `app_status_separator` | `#6F8598` | decorative `|` dividers | 3.31 |
+| `toolbar_on_primary` (= `app_on_status_strip`) | `#F2F6FA` | values | 9.69 |
+| `toolbar_on_secondary` (= `app_on_status_strip_variant`) | `#B8C7D6` | labels, chevron, level NONE | 6.10 |
+| `toolbar_success` | `#7DD6A7` | RTK Fix, good accuracy, battery fill OK | 6.04 |
+| `toolbar_warning` | `#F7C66A` | Float, aging, battery ≤ 30 % | 6.64 |
+| `toolbar_error` | `#FFAAA5` | no fix / error, battery ≤ 15 % | 5.79 |
+| `toolbar_info` | `#7CCBEF` | DGPS / info (cyan, = dark info) | 5.84 |
+| `app_status_separator` | `#7D93A8` | decorative `|` dividers | 3.31 |
 
 Warning pills stay **filled** (distinct from the coloured status text):
 
 | Pill | Fill | Text / icon | Text on fill | Edge on strip |
 |---|---|---|---|---|
-| critical | `#C62828` | `#FFFFFF` | 5.62 | 1 dp outline `toolbar_error` 6.97 (fill alone 2.25) |
-| caution | `#FFB300` | `#1A1A1A` | 9.70 | fill 7.06 |
+| critical | `#C62828` | `#FFFFFF` | 5.62 | 1 dp outline `toolbar_error` 5.79 (fill alone 1.87) |
+| caution | `#FFB300` | `#1A1A1A` | 9.70 | fill 5.86 |
 
 ### Overlay roles
 
 - **AR camera overlays** (`ar_overlay_*`): fixed light-on-dark over `ar_overlay_bg_*` scrims. Status text uses
-  `ar_overlay_success/warning/error/info` (same values as the toolbar roles); primary text `ar_overlay_text` white.
+  `ar_overlay_success/warning/error/info` (aliases of the toolbar roles, so success `#7DD6A7` and info `#7CCBEF`
+  follow the approved palette); primary text `ar_overlay_text` white.
   Checked against the heaviest scrim (`#BB000000`) composited over a white camera frame.
 - **Model viewer canvas**: the Filament skybox/clear colour is a fixed light grey in both themes, so the loading
   overlay is fixed `model_viewer_canvas` `#EEEEEE` and text over it uses `model_viewer_on_canvas` `#1A1C1E`,
-  `model_viewer_on_canvas_error` `#BA1A1A` and the spinner `model_viewer_on_canvas_accent` `#1A56A4`.
+  `model_viewer_on_canvas_error` `#BA1A1A` and the spinner `model_viewer_on_canvas_accent` light cobalt `#245BC2`
+  (5.40:1 on the canvas).
 - **Map overlays** (`map_overlay_bg`, `TextAppearance.App.Map.*`): near-white panel with dark text. Map point labels
   use `map_label_text` on `map_label_bg` (see [Overlay conventions](#overlay-conventions-phase-2)).
 
@@ -142,8 +160,9 @@ headlines.
 
 ## How to add new UI
 
-1. Text colour: `?attr/colorOnSurface` (primary) or `?attr/colorOnSurfaceVariant` (secondary). Avoid `android:alpha`
-   on text; if used, the composite must still pass 4.5:1.
+1. Text colour: `?attr/colorOnSurface` (primary) or `?attr/colorOnSurfaceVariant` (secondary). Headings and labels
+   are neutral; `?attr/colorPrimary` only for interactive / selected text (links, text buttons, selected nav). Avoid
+   `android:alpha` on text; if used, the composite must still pass 4.5:1.
 2. Status: `?attr/colorStatus<Role>` for text/icons/dots on any surface; for a filled badge use
    `colorStatus<Role>Container` + `colorOnStatus<Role>Container`. In Kotlin:
    `MaterialColors.getColor(view, R.attr.colorStatusWarning)`, or from a pure mapper return a `StatusTone`
@@ -162,10 +181,14 @@ headlines.
 - `ui/theme/WcagTest` — pure WCAG helper (`Wcag`: relative luminance, contrast, alpha compositing).
 - `ui/theme/PaletteContrastLightTest` / `PaletteContrastNightTest` — resolve the real resources through
   `Theme.SurveyingApp` (night via `@Config(qualifiers = "night")`) and assert: status foregrounds on every surface
-  ≥ 4.5, on-container ≥ 4.5, RTK chip colours, Material text roles (incl. onSurface at alpha 0.7), outline / primary
-  indicators ≥ 3, toolbar roles and every toolbar level on `#0F3554` ≥ 4.5, warning pill text ≥ 4.5 and pill edges
-  ≥ 3, AR overlay status text on the heaviest scrim, model-viewer canvas text. Each check prints a
-  `contrast[theme] …` line.
+  ≥ 4.5 (surface, background, surfaceVariant and every surface container incl. Low / Lowest), on-container ≥ 4.5,
+  RTK chip colours, Material text roles (incl. onSurface at alpha 0.7), outline / primary indicators ≥ 3, toolbar roles
+  and every toolbar level on `#2A4158` ≥ 4.5, warning pill text ≥ 4.5 and pill edges ≥ 3, AR overlay status text on
+  the heaviest scrim, model-viewer canvas text. Graphite & Cobalt additions: app-bar text ≥ 4.5; info is cyan, differs
+  from cobalt and passes ≥ 4.5 on every surface, the selected row and (toolbar info) the strip; the overflow ⋮ icon's
+  root tint resolves to `colorOnSurfaceVariant` and passes ≥ 3 on every surface, the selected row and the map panel
+  bar; selected navigation (drawer fg is cobalt, ≥ 4.5 on the pill; settings selected text ≥ 4.5; accent bar ≥ 3).
+  Each check prints a `contrast[theme] …` line.
 - `ui/theme/TypeScaleLightTest` / `TypeScaleNightTest` — named styles resolve with the documented sizes and a text
   colour, ≥ 12 sp, tabular figures where required, theme label-small mapped.
 - `ui/theme/HardcodedColorGuardTest` — no raw hex / `@android:color/*` / `@color/white|black` in any layout; Kotlin
@@ -225,6 +248,36 @@ headlines.
 | Coordinate-list placeholder (white on `#BDBDBD`) | 1.88 | onSurfaceVariant on surfaceContainerHighest ≥ 6 |
 | AR label distance line (`#CCCCCC` on pill over white) | 6.36 (9 dp) | 6.36 at 12 sp |
 
+## Graphite & Cobalt
+
+Colour-only pass on top of phase 2 (no layout, type, spacing, navigation or logic change). Spec, full resource /
+attribute mapping and the before / after contrast tables: `docs/design/graphite-cobalt-spec.md`.
+
+- Palette: values above (Brand / Material 3, status, toolbar). New theme items: `colorSurfaceDim` / `colorSurfaceBright`;
+  error, inverse and surfaceContainerLowest / Low roles now come from `app_*` resources; popup press colour follows
+  cobalt (`app_control_highlight`).
+- Usage: section headings and labels neutral — Home card titles `colorOnSurface` (icons `colorOnSurfaceVariant`),
+  Home counts `colorOnSurface`, Models "View" chip cobalt like Coordinates; settings / coordinate-detail / dialog / map
+  section labels and the `TextAppearance.Settings.SectionHeader` / `App.CardSectionLabel` styles `colorOnSurfaceVariant`
+  (also the developer info-card header built in code). Drawer selected item `colorPrimary` (`nav_item_color`); settings
+  selection fill / accent follow `nav_selected_bg` / `app_primary`.
+- Status: info is cyan (`#00658A` / `#7CCBEF`), so DGPS no longer looks like a link. Receiver card fix chip: Fix success,
+  Float warning, DGPS info (was cobalt / amber). Home and GNSS Status "waiting" headline `colorStatusNeutral`.
+- Unchanged by decision: launcher artwork, chart constellation hues, tertiary amber, AR / map scrims and map graphics,
+  model-viewer canvas, window-inset / status-bar behaviour (the system status bar colour on edge-to-edge Android is a
+  separate task).
+
+| Pair (before → after) | Light | Dark |
+|---|---|---|
+| Card fill vs page | 1.08 → 1.09 | 1.06 → 1.37 |
+| Body text on card | 17.09 → 14.65 | 14.05 → 10.65 |
+| Secondary text on sidebar | 8.10 → 5.57 | 8.65 → 8.47 |
+| Cobalt button label | 6.64 → 6.27 | 6.42 → 8.22 |
+| Selected drawer text on pill | 13.22 → 5.23 (now cobalt) | 7.56 → 6.16 |
+| Info text on card | 6.64 → 6.50 (cyan) | 10.33 → 6.61 (cyan) |
+| Toolbar success / info on strip | 6.47 / 7.31 → 6.04 / 5.84 | same |
+| App bar title | 17.58 → 12.48 | 18.85 → 16.53 |
+
 ## Audit
 
 Inventory of theme-bypassing colour and type in `app/src/main` as of `main` 9947ea73, worked in two phases.
@@ -257,6 +310,7 @@ items under [Remaining / device-only](#remaining--device-only).
 | `bg_token`, `side_nav_bar`, `badge_bg`, `bg_rounded_tab`, `thumbnail_border`, `thumbnail_placeholder_bg`, `bg_device_box`, `circle_background`, `panel_handle_grip`, `panel_edge_shadow`, `coordinate_item_bg`, `ripple_square`, `ic_ar_filter`, `ic_delete_red`, `ic_edit_blue`, `ic_device_status`, `ic_section_arrow`, `ic_visibility_24`, `rs2_client_da7f925e`, `ic_camera_orange` | assorted fixed colours | — | ✅ cleanup: **deleted** (no reference from layouts, menus, styles, manifest, Kotlin, or the by-name marker icon keys) |
 | `ic_no_thumbnail` (model card / picker placeholder) | `#9E9E9E` at 40 % alpha on `colorSurfaceVariant` (≈ 1.3:1 both themes) | T | ✅ cleanup: `app:tint="?attr/colorOnSurfaceVariant"`, full opacity |
 | `ic_grid_24` | root `android:tint="@android:color/white"` | T | ✅ cleanup: `?attr/colorControlNormal` (its one use tints it anyway) |
+| `ic_more_vert_24` (coordinate list ⋮, map points panel) | white fill relying on `app:tint`, which only an AppCompat inflater applies; inflated without it (previews, any plain `LayoutInflater`) the dots were white on white | T | ✅ Graphite & Cobalt: root `android:tint="?attr/colorOnSurfaceVariant"` (use-site `app:tint` still overrides); removed from the drawable allowlist |
 | `ic_ar_altitude`, `ic_ar_debug`, `ic_ar_menu` (untinted, white fill) | `#FFFFFF` | F | only used on the dark AR tool card — verified |
 | `ic_stat_location` | grey fills | — | tinted `?attr/colorOnSurface` at use; notification icon is system-tinted |
 | `ic_launcher_*`, `rs2_client_*` | brand artwork | F | kept |
@@ -318,12 +372,12 @@ resources (light in `values/`, dark in `values-night/`):
 
 | Role | Light | Dark | Rule |
 |---|---|---|---|
-| `chart_text` / `chart_title` (axis labels, PRNs, legend, titles) | `#424242` / `#1A1C1E` | `#E2E4E7` / `#FFFFFF` | ≥ 4.5:1, 12 sp |
-| `chart_axis` | `#71787E` | `#8B9198` | ≥ 3:1 |
-| `chart_grid` | `#C5CED8` | `#41484D` | decorative |
+| `chart_text` / `chart_title` (axis labels, PRNs, legend, titles) | `#515D6C` / `#202937` | `#F0F2F7` / `#FFFFFF` | ≥ 4.5:1, 12 sp |
+| `chart_axis` | `#6B7685` | `#8D97A8` | ≥ 3:1 |
+| `chart_grid` | `#CDD4DE` | `#505B6F` | decorative |
 | SNR series `chart_bar_strong / medium / weak` | status success / warning / error | same (night values) | ≥ 3:1, legend names them |
 | `chart_bar_unused` | `#757575` | `#8B9198` | ≥ 3:1 |
-| `chart_used_halo` (skyplot "used") | `#1A1C1E` | `#FFFFFF` | ≥ 3:1 |
+| `chart_used_halo` (skyplot "used") | `#202937` | `#FFFFFF` | ≥ 3:1 |
 | constellation strokes GPS / GLO / GAL / BDS / QZSS / SBAS / IRNSS | `#1565C0 #8E24AA #2E7D32 #8D6E00 #5E35B1 #546E7A #C43E00` | the original pastels `#90CAF9 #CE93D8 #A5D6A7 #FFE082 #B39DDB #B0BEC5 #FFAB91` | ≥ 3:1, hues kept distinct |
 
 Skyplot dots keep their SNR-dependent alpha (decorative fill); the constellation stroke and halo carry the
@@ -381,7 +435,7 @@ stakeout panel (both optional overlays; not an issue on the tablet).
 
 Fixed colours that stay fixed (all named, all validated where text is involved):
 
-1. GNSS strip `#0F3554` and its `toolbar_*` roles — same in both themes by design.
+1. GNSS strip `#2A4158` and its `toolbar_*` roles — same in both themes by design.
 2. AR camera overlays (`ar_overlay_*`) — light-on-dark over scrims; theme surfaces would vanish over a bright frame.
 3. Model-viewer canvas (`model_viewer_*`) — matches the fixed light Filament clear colour.
 4. Map graphics (polylines, accuracy circle, stakeout line, marker borders, label halo) — drawn over map tiles,

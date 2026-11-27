@@ -15,3 +15,14 @@ fun topLevelNavOptions(@IdRes startDestinationId: Int): NavOptions = navOptions 
     launchSingleTop = true
     restoreState = true
 }
+
+/**
+ * Nav options for a top-level jump that carries arguments (e.g. open Settings on a given category).
+ * Same pop-to-start / single-top as [topLevelNavOptions] but never restores saved state: a restored
+ * copy keeps its old arguments and selection, so the requested category would be ignored.
+ */
+fun topLevelNavOptionsWithArgs(@IdRes startDestinationId: Int): NavOptions = navOptions {
+    popUpTo(startDestinationId)
+    launchSingleTop = true
+    restoreState = false
+}

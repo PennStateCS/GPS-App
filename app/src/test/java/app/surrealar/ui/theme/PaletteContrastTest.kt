@@ -52,6 +52,8 @@ abstract class PaletteContrastChecks {
             "surfaceContainerHigh" to attr(M.attr.colorSurfaceContainerHigh),
             "surfaceContainerHighest" to attr(M.attr.colorSurfaceContainerHighest),
             "surfaceVariant" to attr(M.attr.colorSurfaceVariant),
+            "surfaceContainerLow" to attr(M.attr.colorSurfaceContainerLow),
+            "surfaceContainerLowest" to attr(M.attr.colorSurfaceContainerLowest),
         )
     }
 
@@ -129,7 +131,7 @@ abstract class PaletteContrastChecks {
 
     @Test fun `GNSS toolbar roles pass on the navy strip`() {
         val strip = color(R.color.app_status_strip)
-        assertEquals("the strip stays #0F3554", 0xFF0F3554.toInt(), strip)
+        assertEquals("the strip stays #2A4158 (Graphite & Cobalt)", 0xFF2A4158.toInt(), strip)
         for (id in listOf(R.color.toolbar_on_primary, R.color.toolbar_on_secondary, R.color.toolbar_success,
             R.color.toolbar_warning, R.color.toolbar_error, R.color.toolbar_info, R.color.app_on_status_strip,
             R.color.app_on_status_strip_variant)) check(name(id) + " on strip", color(id), strip, Wcag.TEXT)
@@ -222,6 +224,55 @@ abstract class PaletteContrastChecks {
         // Disabled text (M3: onSurface at 38 %) is exempt from WCAG 1.4.3; keep it discernible, not a pass/fail target.
         for (s in listOf("surface", "surfaceContainerHigh"))
             check("disabled text (onSurface 38 pct) on $s - WCAG-exempt floor", Wcag.withAlpha(attr(M.attr.colorOnSurface), 0.38f), surfaces.getValue(s), 2.0)
+    }
+
+    @Test fun `app bar text and icons pass`() {
+        val bar = color(R.color.app_top_app_bar)
+        check("app_on_top_app_bar on app_top_app_bar", color(R.color.app_on_top_app_bar), bar, Wcag.TEXT)
+    }
+
+    @Test fun `info is cyan and distinct from cobalt and passes on every surface`() {
+        val info = color(R.color.status_info)
+        val primary = attr(A.attr.colorPrimary)
+        assertNotEquals("$themeName info must not be the interactive cobalt", primary, info)
+        // Distinct hue: info is cyan (green channel well above red), cobalt is blue (blue >> green).
+        val g = (info shr 8) and 0xFF; val r = (info shr 16) and 0xFF
+        assertTrue("$themeName info ${Wcag.hex(info)} should be cyan-toned", g > r + 0x30)
+        for ((s, bg) in surfaces) check("status_info (cyan) on $s", info, bg, Wcag.TEXT)
+        check("status_info on primaryContainer (selected row)", info, attr(M.attr.colorPrimaryContainer), Wcag.TEXT)
+        check("toolbar_info (DGPS) on strip", color(R.color.toolbar_info), color(R.color.app_status_strip), Wcag.TEXT)
+    }
+
+    @Test fun `overflow icon is theme-tinted and visible on list surfaces`() {
+        // ic_more_vert_24 declares a root android:tint theme attribute, so the dots are tinted even when the inflating
+        // context ignores app:tint. Resolve that attribute and check it as a meaningful graphic (3:1).
+        val parser = ctx.resources.getXml(R.drawable.ic_more_vert_24)
+        var tintAttr = 0
+        while (parser.next() != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+            if (parser.eventType == org.xmlpull.v1.XmlPullParser.START_TAG && parser.name == "vector") {
+                for (i in 0 until parser.attributeCount) if (parser.getAttributeNameResource(i) == android.R.attr.tint)
+                    tintAttr = parser.getAttributeValue(i).removePrefix("?").toInt()
+                break
+            }
+        }
+        assertEquals("$themeName ic_more_vert_24 root tint is ?attr/colorOnSurfaceVariant", M.attr.colorOnSurfaceVariant, tintAttr)
+        val dots = attr(tintAttr)
+        for ((s, bg) in surfaces) check("overflow icon (onSurfaceVariant) on $s", dots, bg, Wcag.NON_TEXT)
+        check("overflow icon on selected row (primaryContainer)", dots, attr(M.attr.colorPrimaryContainer), Wcag.NON_TEXT)
+        // Map points panel: the same icon tinted app_on_top_app_bar on the dark bar.
+        check("overflow icon on map panel bar", color(R.color.app_on_top_app_bar), color(R.color.app_top_app_bar), Wcag.NON_TEXT)
+    }
+
+    @Test fun `selected navigation passes`() {
+        val primary = attr(A.attr.colorPrimary)
+        val navFg = androidx.core.content.ContextCompat.getColorStateList(ctx, R.color.nav_item_color)!!
+            .getColorForState(intArrayOf(android.R.attr.state_checked), 0)
+        assertEquals("$themeName drawer selected item is cobalt", primary, navFg)
+        check("drawer selected text on nav_selected_bg", navFg, color(R.color.nav_selected_bg), Wcag.TEXT)
+        check("settings selected text (colorPrimary) on dev_category_selected_bg", primary, color(R.color.dev_category_selected_bg), Wcag.TEXT)
+        check("settings selected accent bar on sidebar (surfaceVariant)", color(R.color.dev_category_selected_accent),
+            surfaces.getValue("surfaceVariant"), Wcag.NON_TEXT)
+        check("unselected nav text on drawer (surfaceContainer)", attr(M.attr.colorOnSurfaceVariant), surfaces.getValue("surfaceContainer"), Wcag.TEXT)
     }
 
     @Test fun `model viewer canvas text passes`() {

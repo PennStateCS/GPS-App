@@ -655,7 +655,7 @@
                         android:layout_height="wrap_content"
                         android:text="SELECTED POINT"
                         android:textAppearance="?attr/textAppearanceLabelSmall"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/colorOnSurfaceVariant"
                         android:letterSpacing="0.08" />
 
                     <TextView
@@ -863,7 +863,7 @@
                     android:layout_weight="1"
                     android:text="Stakeout Target"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary"
+                    android:textColor="?attr/colorOnSurfaceVariant"
                     android:textStyle="bold"
                     android:maxLines="1"
                     android:ellipsize="end" />

@@ -55,7 +55,7 @@
                     android:paddingBottom="8dp"
                     android:text="Preset"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -185,7 +185,7 @@
                     android:paddingBottom="8dp"
                     android:text="Quality"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Required RTK Status row -->
                 <LinearLayout
@@ -260,7 +260,7 @@
                     android:paddingBottom="8dp"
                     android:text="Timing"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Min Duration row -->
                 <LinearLayout
@@ -387,7 +387,7 @@
                     android:paddingBottom="8dp"
                     android:text="Acceptance Rules"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Explains that completion depends on BOTH time and fixes -->
                 <TextView

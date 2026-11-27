@@ -66,7 +66,7 @@ class HardcodedColorGuardTest {
             "ic_my_location_24", "ic_readiness_pass", "ic_readiness_fail", "ic_readiness_warn", "ic_viewer_info",
             "ic_viewer_ar_placement", "ic_viewer_axis_3d", "ic_viewer_bounding_box", "ic_viewer_grid",
             "ic_viewer_layers", "ic_viewer_lightbulb", "ic_viewer_origin", "ic_viewer_reset", "ic_viewer_rotate_360",
-            "ic_delete", "ic_render_map", "ic_edit_24", "ic_more_vert_24", "ic_chevron_right", "ic_no_thumbnail",
+            "ic_delete", "ic_render_map", "ic_edit_24", "ic_chevron_right", "ic_no_thumbnail",
             "ic_zoom_in", "ic_zoom_out", "ic_camera_white", "bg_model_badge", "bg_field_status_dot", "battery_level"))
             put(n, "tinted at every use")
         // White on a deliberately fixed dark background: AR overlay chips over the camera (ar_overlay_bg_dark), the

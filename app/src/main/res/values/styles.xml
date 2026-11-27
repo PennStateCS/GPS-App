@@ -49,7 +49,7 @@
         <item name="android:paddingTop">16dp</item>
         <item name="android:paddingBottom">8dp</item>
         <item name="android:textAppearance">?attr/textAppearanceLabelLarge</item>
-        <item name="android:textColor">?attr/colorPrimary</item>
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
     </style>
 
     <style name="Settings.Row" parent="">
@@ -175,7 +175,7 @@
                  (e.g. "GNSS Capture", "Live Diagnostics", "Location Source").
     -->
     <style name="TextAppearance.App.CardSectionLabel" parent="TextAppearance.Material3.LabelLarge">
-        <item name="android:textColor">?attr/colorPrimary</item>
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
     </style>
 
     <!--

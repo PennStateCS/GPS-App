@@ -92,8 +92,11 @@ class ReceiverCardBinder(
         fixChip.text = fixText
         fixChip.contentDescription = ctx.getString(R.string.receiver_fix_cd, fixText)
         val (fbg, ffg) = when (m.fix) {
-            CardFix.FIX -> com.google.android.material.R.attr.colorPrimaryContainer to com.google.android.material.R.attr.colorOnPrimaryContainer
-            CardFix.FLOAT, CardFix.DGPS -> com.google.android.material.R.attr.colorTertiaryContainer to com.google.android.material.R.attr.colorOnTertiaryContainer
+            // Semantic status roles, as everywhere else (docs/design-system.md): Fix = success, Float = warning,
+            // DGPS = info. Colour mapping only; the CardFix classification is unchanged.
+            CardFix.FIX -> R.attr.colorStatusSuccessContainer to R.attr.colorOnStatusSuccessContainer
+            CardFix.FLOAT -> R.attr.colorStatusWarningContainer to R.attr.colorOnStatusWarningContainer
+            CardFix.DGPS -> R.attr.colorStatusInfoContainer to R.attr.colorOnStatusInfoContainer
             else -> com.google.android.material.R.attr.colorSurfaceVariant to com.google.android.material.R.attr.colorOnSurfaceVariant
         }
         tint(fixChip, fbg, ffg)

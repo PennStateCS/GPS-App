@@ -65,7 +65,7 @@
                     android:layout_height="wrap_content"
                     android:text="Current location"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <TextView
                     android:id="@+id/text_location"
@@ -100,7 +100,7 @@
                     android:layout_height="wrap_content"
                     android:text="External GNSS capture"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Single compact status line -->
                 <TextView

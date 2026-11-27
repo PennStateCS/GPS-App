@@ -80,18 +80,18 @@
          referenced from themes.xml with no hard-coded hex values in themes.
     ══════════════════════════════════════════════════════════════════════════ -->
 
-    <!-- Top app bar – darkest layer: very deep navy brand bar -->
-    <color name="app_top_app_bar">#071A2D</color>
+    <!-- Top app bar – darkest layer: dark slate (graphite & cobalt), dark in both themes -->
+    <color name="app_top_app_bar">#23354B</color>
     <color name="app_on_top_app_bar">#FFFFFF</color>
 
-    <!-- GNSS/source status strip – lighter blue-navy "instrument strip", clearly above the top bar.
+    <!-- GNSS/source status strip – lighter slate "instrument strip" (#2A4158 in both themes), related to the bar.
          on_status_strip   = primary VALUE text (near-white, bold readings)
          _variant          = secondary LABEL text (soft blue-gray)
          separator         = subtle vertical dividers between tokens -->
-    <color name="app_status_strip">#0F3554</color>
+    <color name="app_status_strip">#2A4158</color>
     <color name="app_on_status_strip">@color/toolbar_on_primary</color>
     <color name="app_on_status_strip_variant">@color/toolbar_on_secondary</color>
-    <color name="app_status_separator">#6F8598</color>
+    <color name="app_status_separator">#7D93A8</color>
 
     <!-- ══════════════════════════════════════════════════════════════════════
          SEMANTIC STATUS ROLES  (light; night values in values-night/colors.xml)
@@ -105,21 +105,21 @@
          Contrast is enforced by SemanticPaletteContrastTest (light + night).
          See docs/design-system.md.
     ══════════════════════════════════════════════════════════════════════════ -->
-    <color name="status_success">#1E6B2A</color>                 <!-- 6.6:1 on white -->
-    <color name="status_success_container">#CDEBD2</color>
-    <color name="status_on_success_container">#0B3D14</color>
-    <color name="status_warning">#9A4700</color>                 <!-- 6.4:1 on white (was #E65100, 3.8:1) -->
-    <color name="status_warning_container">#FFDEA8</color>
-    <color name="status_on_warning_container">#2E1A00</color>
-    <color name="status_error">#BA1A1A</color>                   <!-- 6.5:1 on white; = colorError -->
-    <color name="status_error_container">#FFDAD6</color>
-    <color name="status_on_error_container">#410002</color>
-    <color name="status_info">#155DA8</color>                    <!-- 6.6:1 on white; = colorPrimary -->
-    <color name="status_info_container">#D7E8FF</color>
-    <color name="status_on_info_container">#001B44</color>
-    <color name="status_neutral">#41484D</color>                 <!-- 9.3:1 on white; = colorOnSurfaceVariant -->
-    <color name="status_neutral_container">#E3E7ED</color>
-    <color name="status_on_neutral_container">#1A1C1E</color>
+    <color name="status_success">#17693F</color>                 <!-- 6.7:1 on white; ≥ 5.0 on every light surface -->
+    <color name="status_success_container">#D3EFDF</color>
+    <color name="status_on_success_container">#0B3B22</color>
+    <color name="status_warning">#8C5000</color>                 <!-- 6.4:1 on white; ≥ 4.8 on every light surface -->
+    <color name="status_warning_container">#FBE3B6</color>
+    <color name="status_on_warning_container">#3A2400</color>
+    <color name="status_error">#B3261E</color>                   <!-- 6.5:1 on white; = colorError (app_error) -->
+    <color name="status_error_container">#FCDCDA</color>
+    <color name="status_on_error_container">#5C0B0B</color>
+    <color name="status_info">#00658A</color>                    <!-- 6.5:1 on white; cyan, distinct from cobalt colorPrimary -->
+    <color name="status_info_container">#CDEBF6</color>
+    <color name="status_on_info_container">#002C3D</color>
+    <color name="status_neutral">#515D6C</color>                 <!-- 6.7:1 on white; = colorOnSurfaceVariant -->
+    <color name="status_neutral_container">#E3E7EE</color>
+    <color name="status_on_neutral_container">#202937</color>
 
     <!-- Legacy names kept as aliases (Home field status, readiness, GNSS report, AR sheets use them). -->
     <color name="app_success">@color/status_success</color>
@@ -129,16 +129,16 @@
 
     <!-- ══════════════════════════════════════════════════════════════════════
          GNSS TOOLBAR FOREGROUND ROLES
-         The strip (app_status_strip #0F3554) is navy in BOTH themes, so these are the same in
+         The strip (app_status_strip #2A4158) is slate in BOTH themes, so these are the same in
          both themes (no night override). Only for text/icons drawn on the strip — not global
-         semantics. All ≥ 6.4:1 on #0F3554 (GnssToolbarContrastTest).
+         semantics. All ≥ 5.7:1 on #2A4158 (PaletteContrastTest).
     ══════════════════════════════════════════════════════════════════════════ -->
-    <color name="toolbar_on_primary">#F2F6FA</color>     <!-- values, 11.7:1 -->
-    <color name="toolbar_on_secondary">#B8C7D6</color>   <!-- labels, chevron, NONE level, 7.3:1 -->
-    <color name="toolbar_success">#81C995</color>        <!-- RTK Fix, good accuracy, 6.5:1 -->
-    <color name="toolbar_warning">#F7C66A</color>        <!-- Float, aging, 8.0:1 -->
-    <color name="toolbar_error">#FFAAA5</color>          <!-- no fix, error, 7.0:1 -->
-    <color name="toolbar_info">#9CC8FF</color>           <!-- DGPS / informational, 7.3:1 -->
+    <color name="toolbar_on_primary">#F2F6FA</color>     <!-- values, 9.7:1 -->
+    <color name="toolbar_on_secondary">#B8C7D6</color>   <!-- labels, chevron, NONE level, 6.1:1 -->
+    <color name="toolbar_success">#7DD6A7</color>        <!-- RTK Fix, good accuracy, 6.0:1 (= dark status_success) -->
+    <color name="toolbar_warning">#F7C66A</color>        <!-- Float, aging, 6.6:1 -->
+    <color name="toolbar_error">#FFAAA5</color>          <!-- no fix, error, 5.8:1 -->
+    <color name="toolbar_info">#7CCBEF</color>           <!-- DGPS / informational, 5.8:1 (= dark status_info) -->
 
     <!-- Light-on-dark status text over AR camera overlays (ar_overlay_bg_*, ≥ 73 % black):
          same values as the toolbar roles, named by purpose so they can diverge later. -->
@@ -147,36 +147,36 @@
     <color name="ar_overlay_error">@color/toolbar_error</color>
     <color name="ar_overlay_info">@color/toolbar_info</color>
 
-    <!-- Primary – professional blue (#155DA8) -->
-    <color name="app_primary">#155DA8</color>
+    <!-- Primary – cobalt (#245BC2): interactive, active and selected only -->
+    <color name="app_primary">#245BC2</color>
     <color name="app_on_primary">#FFFFFF</color>
-    <color name="app_primary_container">#D7E8FF</color>
-    <color name="app_on_primary_container">#001B44</color>
+    <color name="app_primary_container">#E2EBFC</color>
+    <color name="app_on_primary_container">#102F66</color>
 
-    <!-- Secondary – GNSS/success teal (#00796B) -->
-    <color name="app_secondary">#00796B</color>
+    <!-- Secondary – slate graphite (#4A5A70) -->
+    <color name="app_secondary">#4A5A70</color>
     <color name="app_on_secondary">#FFFFFF</color>
-    <color name="app_secondary_container">#BFEDE6</color>
-    <color name="app_on_secondary_container">#002019</color>
+    <color name="app_secondary_container">#DCE3ED</color>
+    <color name="app_on_secondary_container">#1C2533</color>
 
-    <!-- Background – soft neutral blue-gray -->
-    <color name="app_background">#F4F7FA</color>
-    <color name="app_on_background">#1A1C1E</color>
+    <!-- Background – graphite page -->
+    <color name="app_background">#F3F5F8</color>
+    <color name="app_on_background">#202937</color>
 
     <!-- Surface / cards -->
     <color name="app_surface">#FFFFFF</color>
-    <color name="app_on_surface">#1A1C1E</color>
-    <color name="app_surface_variant">#EAF0F6</color>
-    <color name="app_on_surface_variant">#41484D</color>
+    <color name="app_on_surface">#202937</color>
+    <color name="app_surface_variant">#E8EAF0</color>
+    <color name="app_on_surface_variant">#515D6C</color>
 
     <!-- Surface containers (dropdowns, nav drawer, stat tiles) -->
-    <color name="app_surface_container">#EAF0F6</color>
-    <color name="app_surface_container_high">#DFE7F0</color>
-    <color name="app_surface_container_highest">#D4DCE8</color>
+    <color name="app_surface_container">#E8EAF0</color>
+    <color name="app_surface_container_high">#E2E6EC</color>
+    <color name="app_surface_container_highest">#DADFE7</color>
 
     <!-- Outline -->
-    <color name="app_outline">#71787E</color>
-    <color name="app_outline_variant">#C5CED8</color>
+    <color name="app_outline">#6B7685</color>
+    <color name="app_outline_variant">#CDD4DE</color>
 
     <!-- ══════════════════════════════════════════════════════════════════════
          APP-SPECIFIC SEMANTIC COLORS
@@ -196,15 +196,15 @@
     <color name="coordinate_row_odd">#FFF5F5F5</color>
     <!-- Normal outline uses a 20 % black scrim; selected uses new primary -->
     <color name="coordinate_card_stroke_normal">#33000000</color>
-    <color name="coordinate_card_stroke_selected">@color/md_primary_40</color>
-    <color name="coordinate_list_bg">#FFF4F4F6</color>
-    <color name="coordinate_divider">#33000000</color>
+    <color name="coordinate_card_stroke_selected">@color/app_primary</color>
+    <color name="coordinate_list_bg">@color/app_background</color>
+    <color name="coordinate_divider">@color/app_outline_variant</color>
 
     <!-- Developer panel ─────────────────────────────────────────────────── -->
     <color name="dev_panel_bg">#F5F5F5</color>
-    <color name="dev_category_selected_bg">@color/md_primary_90</color>
+    <color name="dev_category_selected_bg">@color/nav_selected_bg</color>
     <!-- Accent now follows the new primary blue instead of M2 purple -->
-    <color name="dev_category_selected_accent">@color/md_primary_40</color>
+    <color name="dev_category_selected_accent">@color/app_primary</color>
     <color name="dev_category_ripple_mask">#33000000</color>
     <color name="dev_info_label">#212121</color>
     <color name="dev_info_value">#000000</color>
@@ -225,7 +225,7 @@
     <color name="status_fix">@color/status_success</color>
     <color name="status_float">@color/status_warning</color>
     <color name="status_dgps">@color/status_info</color>
-    <color name="status_single">#546E7A</color>
+    <color name="status_single">@color/status_neutral</color>
     <color name="status_no_fix">@color/status_error</color>
 
     <!-- Home screen ─────────────────────────────────────────────────────── -->
@@ -236,12 +236,12 @@
 
     <!-- Navigation drawer selected pill ───────────────────────────────────── -->
     <!-- Night override in values-night/colors.xml                             -->
-    <color name="nav_selected_bg">@color/md_primary_90</color>
+    <color name="nav_selected_bg">#E2EBFC</color>
 
     <!-- Stat card backgrounds (bg_rounded_card / bg_rounded_light) ──────── -->
     <!-- Night overrides are in values-night/colors.xml -->
-    <color name="stat_card_bg">#FFFFFF</color>
-    <color name="stat_card_stroke">#D0D0D0</color>
+    <color name="stat_card_bg">@color/app_surface</color>
+    <color name="stat_card_stroke">@color/app_outline_variant</color>
 
     <!-- Quick-action chip backgrounds ───────────────────────────────────── -->
     <!-- Map and AR chips keep their distinct brand colors; Settings now uses primary -->
@@ -274,17 +274,17 @@
     <!-- GNSS / satellite charts (SatelliteSignalChartView, SkyplotView, SnrBarView) ─────────────
          Drawn on the card surface. Axis / series / constellation colours ≥ 3:1 and text ≥ 4.5:1 on
          surface and surfaceContainer in both themes (PaletteContrastChecks). Grid is decorative. -->
-    <color name="chart_axis">#71787E</color>              <!-- = outline; was #BDBDBD (1.9:1) -->
-    <color name="chart_grid">#C5CED8</color>              <!-- = outlineVariant, decorative -->
-    <color name="chart_text">#424242</color>
-    <color name="chart_title">#1A1C1E</color>
+    <color name="chart_axis">#6B7685</color>              <!-- = outline; was #BDBDBD (1.9:1) -->
+    <color name="chart_grid">#CDD4DE</color>              <!-- = outlineVariant, decorative -->
+    <color name="chart_text">#515D6C</color>
+    <color name="chart_title">#202937</color>
     <!-- SNR series (used satellites): the semantic success / warning / error foregrounds. -->
     <color name="chart_bar_strong">@color/status_fix</color>
     <color name="chart_bar_medium">@color/status_float</color>
     <color name="chart_bar_weak">@color/status_no_fix</color>
     <color name="chart_bar_unused">#757575</color>        <!-- was #9E9E9E (2.7:1) -->
     <!-- Skyplot "used in fix" halo around a satellite dot. -->
-    <color name="chart_used_halo">#1A1C1E</color>
+    <color name="chart_used_halo">#202937</color>
     <!-- Skyplot constellation strokes: darker hues in light (the pastels were ~1.3:1 on white),
          the original pastels in dark. -->
     <color name="chart_constellation_gps">#1565C0</color>
@@ -298,7 +298,7 @@
 
     <!-- Compact GNSS toolbar warning pill (on the navy strip, both themes): icon + text on a filled pill.
          critical = red / white (5.6:1) with a light-red 1 dp outline so the pill edge reads on navy
-         (the red fill alone is only 2.3:1 against #0F3554), caution = amber / near-black (9.7:1; fill 7.1:1). -->
+         (the red fill alone is only 1.9:1 against #2A4158), caution = amber / near-black (9.7:1; fill 5.9:1). -->
     <color name="gnss_toolbar_warning_critical_bg">#C62828</color>
     <color name="gnss_toolbar_warning_critical_stroke">@color/toolbar_error</color>
     <color name="gnss_toolbar_warning_critical_fg">#FFFFFF</color>
@@ -313,6 +313,19 @@
     <color name="model_viewer_canvas">#EEEEEE</color>
     <color name="model_viewer_on_canvas">#1A1C1E</color>          <!-- 14.7:1 -->
     <color name="model_viewer_on_canvas_error">#BA1A1A</color>    <!-- 5.6:1 -->
-    <color name="model_viewer_on_canvas_accent">@color/md_primary_40</color>  <!-- spinner, 5.9:1 (night primary #8FC5FF was 1.5:1) -->
+    <color name="model_viewer_on_canvas_accent">#245BC2</color>  <!-- spinner, light cobalt, 5.4:1 on the canvas (night primary would be 1.4:1) -->
+
+    <!-- Graphite & Cobalt (preview): new roles -->
+    <color name="app_surface_container_lowest">#FFFFFF</color>
+    <color name="app_surface_container_low">#EEF2F6</color>
+    <color name="app_surface_dim">#D9DDE4</color>
+    <color name="app_surface_bright">#FFFFFF</color>
+    <color name="app_inverse_surface">#2F3644</color>
+    <color name="app_inverse_on_surface">#EEF1F6</color>
+    <color name="app_inverse_primary">#A8C6FF</color>
+    <color name="app_on_error">#FFFFFF</color>
+    <color name="app_error_container">#FCDCDA</color>
+    <color name="app_on_error_container">#5C0B0B</color>
+    <color name="app_control_highlight">#1A245BC2</color>
 
 </resources>

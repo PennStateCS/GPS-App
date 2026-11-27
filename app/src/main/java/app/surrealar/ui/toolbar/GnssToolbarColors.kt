@@ -5,8 +5,8 @@ import androidx.annotation.ColorRes
 import app.surrealar.R
 
 /**
- * Status level → foreground colour for text on the GNSS toolbar strip (#0F3554, navy in both themes). Uses the
- * toolbar-specific roles (values/colors.xml, "GNSS TOOLBAR FOREGROUND ROLES"), all ≥ 6.4:1 on the strip — not the
+ * Status level → foreground colour for text on the GNSS toolbar strip (#2A4158, slate in both themes). Uses the
+ * toolbar-specific roles (values/colors.xml, "GNSS TOOLBAR FOREGROUND ROLES"), all ≥ 5.7:1 on the strip — not the
  * global status_* roles, which are tuned for app surfaces. View concern only; the level comes from the mapper.
  */
 object GnssToolbarColors {

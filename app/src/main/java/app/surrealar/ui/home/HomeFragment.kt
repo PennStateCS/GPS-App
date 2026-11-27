@@ -40,6 +40,7 @@ import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.ui.components.FixBadgeView
 import app.surrealar.ui.map.MapThemeHelper
 import app.surrealar.ui.navigation.topLevelNavOptions
+import app.surrealar.ui.navigation.topLevelNavOptionsWithArgs
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.MapView
@@ -350,7 +351,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 nav.navigate(R.id.nav_settings,
                     androidx.core.os.bundleOf(app.surrealar.ui.settings.SettingsFragment.ARG_INITIAL_CATEGORY_ID to
                         app.surrealar.ui.settings.SettingsFragment.CATEGORY_COORDINATES),
-                    topLevelNavOptions(nav.graph.startDestinationId))
+                    topLevelNavOptionsWithArgs(nav.graph.startDestinationId))
             } catch (e: Exception) { logNavFailure("coordinate settings", e) }
         }
         viewLifecycleOwner.lifecycleScope.launch {
@@ -425,7 +426,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     nav.navigate(dest, androidx.core.os.bundleOf(
                         app.surrealar.ui.settings.SettingsFragment.ARG_INITIAL_CATEGORY_ID to
                             app.surrealar.ui.settings.SettingsFragment.CATEGORY_RECEIVER),
-                        topLevelNavOptions(nav.graph.startDestinationId))
+                        topLevelNavOptionsWithArgs(nav.graph.startDestinationId))
                 } else navigateTopLevel(dest)
             }
             catch (e: Exception) { logNavFailure("field status action", e) }
@@ -507,7 +508,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         status: HomeFieldStatusMapper.FieldStatus,
     ) {
         // Headline: neutral severity reads as the brand primary (calm "waiting"/"internal" states).
-        val headlineColor = severityColor(b.root, status.severity, androidx.appcompat.R.attr.colorPrimary)
+        val headlineColor = severityColor(b.root, status.severity, R.attr.colorStatusNeutral)
         b.textFieldStatusHeadline.text = status.headline
         b.textFieldStatusHeadline.setTextColor(headlineColor)
         // Other warnings that apply are spelled out (never only a colour or a chip).

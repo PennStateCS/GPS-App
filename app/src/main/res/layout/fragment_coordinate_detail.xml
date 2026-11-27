@@ -177,7 +177,7 @@
                     android:paddingBottom="6dp"
                     android:text="Summary"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <TextView
                     android:id="@+id/text_summary_note"
@@ -226,7 +226,7 @@
                     android:paddingBottom="6dp"
                     android:text="Location"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Scannable Latitude / Longitude / Altitude tiles (populated dynamically). -->
                 <app.surrealar.ui.components.AdaptiveTileRow
@@ -300,7 +300,7 @@
                     android:paddingBottom="6dp"
                     android:text="Projection / CRS"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <LinearLayout
                     android:id="@+id/card_projection_rows"
@@ -337,7 +337,7 @@
                     android:paddingBottom="6dp"
                     android:text="Capture Source"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <LinearLayout
                     android:id="@+id/card_capture_rows"
@@ -385,7 +385,7 @@
                     android:paddingBottom="6dp"
                     android:text="Survey / GNSS"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Scannable quality tiles (Fix / H Acc / V Acc / Sats); populated dynamically. -->
                 <app.surrealar.ui.components.AdaptiveTileRow
@@ -435,7 +435,7 @@
                     android:paddingBottom="6dp"
                     android:text="Averaging &amp; Precision"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <LinearLayout
                     android:id="@+id/card_averaging_rows"
@@ -472,7 +472,7 @@
                     android:paddingBottom="6dp"
                     android:text="Motion"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <LinearLayout
                     android:id="@+id/card_motion_rows"
@@ -511,7 +511,7 @@
                     android:paddingBottom="6dp"
                     android:text="Linked Model"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- ── Linked state ──────────────────────────────────────── -->
                 <LinearLayout
@@ -702,7 +702,7 @@
                     android:paddingBottom="6dp"
                     android:text="Location Preview"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <com.google.android.gms.maps.MapView
                     android:id="@+id/mapView"

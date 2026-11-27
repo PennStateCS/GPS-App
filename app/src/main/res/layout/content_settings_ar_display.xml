@@ -55,7 +55,7 @@
                     android:paddingBottom="8dp"
                     android:text="Anchors &amp; Altitude"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Default Altitude Mode row -->
                 <LinearLayout
@@ -184,7 +184,7 @@
                     android:paddingBottom="8dp"
                     android:text="Labels &amp; Guides"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Show Coordinate Labels row -->
                 <LinearLayout
@@ -293,7 +293,7 @@
                     android:paddingBottom="8dp"
                     android:text="Debug"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Show Debug Overlay row -->
                 <LinearLayout
@@ -358,7 +358,7 @@
                     android:paddingBottom="8dp"
                     android:text="Advanced AR"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Info note inside card -->
                 <com.google.android.material.card.MaterialCardView
@@ -444,7 +444,7 @@
                     android:paddingBottom="8dp"
                     android:text="Advanced AR Tools"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- AR Debug Tools row -->
                 <LinearLayout
