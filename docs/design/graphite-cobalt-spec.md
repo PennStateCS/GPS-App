@@ -1,6 +1,8 @@
 # Graphite & Cobalt theme: colour specification (design stage)
 
-Status: **proposal, awaiting approval. Nothing here is implemented on `main`.**
+Status: **approved 2026-11-26 with adjustments (§6); implemented on `feature/graphite-cobalt-theme` (not merged).**
+The adjustments: cyan info role, ⋮ overflow icon fix, receiver-card FLOAT → warning / DGPS → info, AR success and the
+model-viewer spinner follow the approved palette; system status-bar insets deferred.
 Scope: colour values and colour-attribute references only. No layout, typography, spacing, navigation, toolbar content,
 GNSS / coordinate / AR / map / receiver / capture behaviour changes.
 
@@ -8,10 +10,10 @@ Inputs: the user brief (Graphite & Cobalt), `docs/design-system.md` (current pal
 resources on `main` @ `fe471f9b` (`values/colors.xml`, `values-night/colors.xml`, `values*/themes.xml`, `attrs.xml`,
 `styles.xml`) and tablet screenshots of the current app (SM-X940, light + dark).
 
-Previews and contrast numbers come from the throwaway branch `design/graphite-cobalt-preview` (never merged): it adds
-`GraphiteCobaltPreviewTest` (real layouts, Robolectric native graphics, tablet `sw600dp` qualifiers) and
-`GraphiteCobaltContrastReportTest` (the existing `Wcag` helper on the resolved theme), runs them once on the current
-palette ("before") and once with this spec's mapping applied ("after").
+Previews and contrast numbers come from two throwaway test classes (`GraphiteCobaltPreviewTest`: real layouts,
+Robolectric native graphics, tablet `sw600dp` qualifiers; `GraphiteCobaltContrastReportTest`: the existing `Wcag` helper
+on the resolved theme), run on `main` ("before") and on `feature/graphite-cobalt-theme` ("after"). They are not
+committed to the feature branch; the first proposal round lives on `design/graphite-cobalt-preview` (never merged).
 
 ## 0. Summary of the direction
 
@@ -24,8 +26,8 @@ palette ("before") and once with this spec's mapping applied ("after").
   card `#303746` < elevated `#394253`.
 - App bar is dark in both themes (`#23354B` / `#171F2D`); the GNSS strip is `#2A4158` in both themes (brief value kept;
   all strip foregrounds re-validated, one decorative separator adjusted).
-- Semantic status hues are unchanged in meaning; dark values are the brief's, light values are hue-matched
-  counterparts. Map tiles, camera imagery and their overlays keep their fixed conventions.
+- Semantic status hues are unchanged in meaning; success / warning / error dark values are the brief's, light values
+  hue-matched counterparts; info is cyan (`#00658A` / `#7CCBEF`) so it cannot be mistaken for interactive cobalt. Map tiles, camera imagery and their overlays keep their fixed conventions.
 
 ## 1. Final palettes
 
@@ -44,12 +46,12 @@ All values are opaque sRGB. "Brief" = the user's starting value. Every adjustmen
 | Strip RTK Fix / good `toolbar_success` | `#7DD6A7` | same | **adjusted** from `#81C995` (5.37 → 6.04; matches dark success) |
 | Strip Float / aging `toolbar_warning` | `#F7C66A` | same | unchanged, 6.64 |
 | Strip no fix / error `toolbar_error` | `#FFAAA5` | same | unchanged, 5.79 (brief's `#F29A9A` would be 4.94: kept the lighter toolbar value) |
-| Strip DGPS / info `toolbar_info` | `#9CC8FF` | same | unchanged, 6.07 |
+| Strip DGPS / info `toolbar_info` | `#7CCBEF` | same | **adjusted** from `#9CC8FF` (6.07 → 5.84) to the approved cyan info |
 | Critical pill fill / text / outline | `#C62828` / `#FFFFFF` / `toolbar_error` | same | unchanged; fill alone 1.87 on the strip, the 1 dp outline carries the edge (5.79) |
 | Caution pill fill / text | `#FFB300` / `#1A1A1A` | same | unchanged; fill 5.86 on the strip, text 9.70 |
 
 The app bar and strip are related (same blue-slate hue) but distinct: in light the strip is one step lighter than the
-bar (1.19:1 luminance step); in dark the bar is
+bar (1.18:1 luminance step, plus the hairline change of texture between title row and data row); in dark the bar is
 much darker than the strip (1.57:1). Both are dark in both themes, so the strip's foreground roles stay theme-independent.
 
 ### 1.2 Light palette (Material 3 roles)
@@ -121,13 +123,27 @@ Three colours per role, as today (`status_<role>` foreground for text / icons / 
 | success | `#17693F` (was `#1E6B2A`) | `#D3EFDF` / `#0B3B22` | `#7DD6A7` (brief; was `#81C995`) | `#1F4A36` / `#C9F2DC` |
 | warning | `#8C5000` (was `#9A4700`) | `#FBE3B6` / `#3A2400` | `#F2C26B` (brief; was `#F7C66A`) | `#54401A` / `#FCE4B4` |
 | error | `#B3261E` (was `#BA1A1A`) | `#FCDCDA` / `#5C0B0B` | `#F29A9A` (brief; was `#FFB4AB`) | `#5E2A2D` / `#FCDADA` |
-| info | `#1F5AA8` (was `#155DA8`) | `#DCE7FB` / `#0E2E5C` | `#8CB8FF` (brief; was `#9CC8FF`) | `#24406A` / `#D9E6FF` |
+| info (cyan) | `#00658A` (was `#155DA8`) | `#CDEBF6` / `#002C3D` | `#7CCBEF` (was `#9CC8FF`) | `#1D4A5C` / `#C9ECFA` |
 | neutral | `#515D6C` (= onSurfaceVariant) | `#E3E7EE` / `#202937` | `#C8CED8` (= onSurfaceVariant) | `#3A4252` / `#E4E8EF` |
 
 Light counterparts are hue-matched to the brief's dark values (success mint-green ~150°, warning amber ~35°, error red
 ~3°, info blue ~215°) and darkened until they pass 4.5:1 on the darkest light surface they can sit on
-(`surfaceContainerHighest #DADFE7`). Info stays a distinct, slightly darker and greener blue than cobalt `#245BC2` so
-"DGPS" text is not read as a link (D3).
+(`surfaceContainerHighest #DADFE7`). Info is **cyan** (approved adjustment, D3): `#00658A` / `#7CCBEF` were the
+requested starting values and pass unchanged on every applicable surface (light ≥ 4.86, dark ≥ 5.36, strip 5.84; table
+below), so they are final. Containers are derived at the same hue: light `#CDEBF6` with `#002C3D` (11.77), dark
+`#1D4A5C` with `#C9ECFA` (7.71).
+
+| Info foreground on | Light `#00658A` | Dark `#7CCBEF` |
+|---|---|---|
+| page (background) | 5.96 | 9.04 |
+| card (surface) / surfaceContainerLowest | 6.50 / 6.50 | 6.61 / 9.66 |
+| secondary (surfaceContainerLow) | 5.78 | 7.78 |
+| sidebar / drawer (surfaceVariant, surfaceContainer) | 5.41 | 7.43 |
+| elevated (surfaceContainerHigh) | 5.19 | 5.60 |
+| surfaceContainerHighest | 4.86 | 5.36 |
+| selected row (primaryContainer) | 5.43 | 5.89 |
+| GNSS strip `#2A4158` (`toolbar_info`) | — | 5.84 |
+| AR chip scrim over white (`ar_overlay_info`, ≈ `#333333`) | — | 7.01 |
 
 Legacy aliases keep pointing at the roles: `app_success|warning|error|info` → `status_*`; `status_fix|float|dgps|no_fix`
 → success / warning / info / error; `status_single` → `status_neutral` (was a separate `#546E7A` / `#B0BEC5`).
@@ -145,12 +161,13 @@ Legacy aliases keep pointing at the roles: `app_success|warning|error|info` → 
 | Corrections aging | warning | warning (in words) | warning row, ⚠ prefix | — | — | warning | caution pill (amber) | warning |
 | Corrections stale / unavailable | error | error (in words) | error row, ⚠ prefix | — | — | error | critical pill (red + outline) | error |
 | Receiver error / link failed | error | error | error | — | — | error | critical pill | error |
-| Connecting / waiting | neutral | neutral (Home uses colorPrimary today: item I-9) | neutral | — | — | neutral | `toolbar_on_secondary` | neutral |
+| Connecting / waiting | neutral | neutral (`colorStatusNeutral`, I-9) | neutral | — | — | neutral | `toolbar_on_secondary` | neutral |
 
-This is the mapping the code already implements (design-system phase 2); the spec changes values, not meanings.
-Two known deviations are listed as implementation items: the receiver card colours FLOAT **and DGPS** with the tertiary
-(amber) container (I-10), and Home / report use `colorPrimary` for the neutral "waiting" headline (I-9). Status is never
-colour alone (words / icon / ⚠ prefix stay).
+This is the mapping the code already implemented (design-system phase 2); the spec changes values, not meanings. The
+two deviations found in the proposal are fixed on the feature branch: the receiver card fix chip now uses success /
+warning / info containers for Fix / Float / DGPS (I-10; it used cobalt for Fix and amber for both Float and DGPS), and
+Home / the report draw the neutral "waiting" headline in `colorStatusNeutral` (I-9). Status is never colour alone
+(words / icon / ⚠ prefix stay).
 
 ### 1.6 Adjustments to the brief's values (original → adjusted, why)
 
@@ -161,6 +178,8 @@ colour alone (words / icon / ⚠ prefix stay).
 | `toolbar_error` | brief error `#F29A9A` would apply | keep `#FFAAA5` | `#F29A9A` is only 4.94 on the strip; kept the toolbar-specific value (5.79) |
 | Dark surfaceContainerHighest | (none; derived) | `#3C4555` (not `#424B5D`) | `status_error` `#F29A9A` must stay ≥ 4.5 on every surface; on `#424B5D` it is 4.12, on `#3C4555` 4.54 |
 | Light status foregrounds | current values | hue-matched (§1.4) | the brief asks for light counterparts of the new dark hues; all ≥ 4.8 on `#DADFE7` |
+| Info (approved adjustment) | `#1F5AA8` / `#8CB8FF` (proposal) | `#00658A` / `#7CCBEF` | proposal blue was too close to cobalt; the requested cyan starting values pass everywhere, so no further adjustment |
+| `toolbar_info` | `#9CC8FF` | `#7CCBEF` | follows the cyan info on the strip (5.84); `ar_overlay_info` follows through its alias |
 | Light onPrimaryContainer | first pick `#12336E` | `#102F66` | the coordinate list draws the selected row's coordinates in onPrimaryContainer at 70 % alpha; `#12336E` composited was 4.48 on `#E2EBFC` (caught by the existing `PaletteContrastLightTest`), `#102F66` gives 4.69 |
 | Card / sidebar / page fills | brief | unchanged | — |
 | Cobalt, selected nav, text colours | brief | unchanged | all pass (§4) |
@@ -169,7 +188,7 @@ No brief value failed WCAG on its intended pairs; the adjustments are only to de
 
 ## 2. Mapping: existing resources and theme attributes → proposed values
 
-Generated from `main` @ `fe471f9b` vs the preview branch (which carries exactly this mapping). Values are resolved per
+Generated from `main` @ `fe471f9b` vs `feature/graphite-cobalt-theme` (the implementation of this mapping). Values are resolved per
 theme (aliases followed; night overrides applied). **Bold** = changed. "unused" = no reference outside `colors.xml`
 (left as is, D11). Fixed overlay resources (`ar_overlay_*`, `map_*`, `model_viewer_*`, constellation strokes) are listed
 for completeness and are unchanged except where stated in §5.
@@ -239,26 +258,26 @@ for completeness and are unchanged except where stated in §5.
 | `status_error` | `#BA1A1A` → **`#B3261E`** | `#FFB4AB` → **`#F29A9A`** | changed |  |
 | `status_error_container` | `#FFDAD6` → **`#FCDCDA`** | `#93000A` → **`#5E2A2D`** | changed |  |
 | `status_on_error_container` | `#410002` → **`#5C0B0B`** | `#FFDAD6` → **`#FCDADA`** | changed |  |
-| `status_info` | `#155DA8` → **`#1F5AA8`** | `#9CC8FF` → **`#8CB8FF`** | changed |  |
-| `status_info_container` | `#D7E8FF` → **`#DCE7FB`** | `#0F3A63` → **`#24406A`** | changed |  |
-| `status_on_info_container` | `#001B44` → **`#0E2E5C`** | `#D7E8FF` → **`#D9E6FF`** | changed |  |
+| `status_info` | `#155DA8` → **`#00658A`** | `#9CC8FF` → **`#7CCBEF`** | changed |  |
+| `status_info_container` | `#D7E8FF` → **`#CDEBF6`** | `#0F3A63` → **`#1D4A5C`** | changed |  |
+| `status_on_info_container` | `#001B44` → **`#002C3D`** | `#D7E8FF` → **`#C9ECFA`** | changed |  |
 | `status_neutral` | `#41484D` → **`#515D6C`** | `#C1C8CE` → **`#C8CED8`** | changed |  |
 | `status_neutral_container` | `#E3E7ED` → **`#E3E7EE`** | `#2A3644` → **`#3A4252`** | changed |  |
 | `status_on_neutral_container` | `#1A1C1E` → **`#202937`** | `#E2E4E7` → **`#E4E8EF`** | changed |  |
 | `app_success` | `#1E6B2A` → **`#17693F`** | `#81C995` → **`#7DD6A7`** | changed | alias `status_success` |
 | `app_warning` | `#9A4700` → **`#8C5000`** | `#F7C66A` → **`#F2C26B`** | changed | alias `status_warning` |
 | `app_error` | `#BA1A1A` → **`#B3261E`** | `#FFB4AB` → **`#F29A9A`** | changed | alias `status_error` |
-| `app_info` | `#155DA8` → **`#1F5AA8`** | `#9CC8FF` → **`#8CB8FF`** | changed | alias `status_info` |
+| `app_info` | `#155DA8` → **`#00658A`** | `#9CC8FF` → **`#7CCBEF`** | changed | alias `status_info` |
 | `toolbar_on_primary` | `#F2F6FA` | `#F2F6FA` | unchanged |  |
 | `toolbar_on_secondary` | `#B8C7D6` | `#B8C7D6` | unchanged |  |
 | `toolbar_success` | `#81C995` → **`#7DD6A7`** | `#81C995` → **`#7DD6A7`** | changed |  |
 | `toolbar_warning` | `#F7C66A` | `#F7C66A` | unchanged |  |
 | `toolbar_error` | `#FFAAA5` | `#FFAAA5` | unchanged |  |
-| `toolbar_info` | `#9CC8FF` | `#9CC8FF` | unchanged |  |
+| `toolbar_info` | `#9CC8FF` → **`#7CCBEF`** | `#9CC8FF` → **`#7CCBEF`** | changed |  |
 | `ar_overlay_success` | `#81C995` → **`#7DD6A7`** | `#81C995` → **`#7DD6A7`** | changed | alias `toolbar_success` |
 | `ar_overlay_warning` | `#F7C66A` | `#F7C66A` | unchanged | alias `toolbar_warning` |
 | `ar_overlay_error` | `#FFAAA5` | `#FFAAA5` | unchanged | alias `toolbar_error` |
-| `ar_overlay_info` | `#9CC8FF` | `#9CC8FF` | unchanged | alias `toolbar_info` |
+| `ar_overlay_info` | `#9CC8FF` → **`#7CCBEF`** | `#9CC8FF` → **`#7CCBEF`** | changed | alias `toolbar_info` |
 | `app_primary` | `#155DA8` → **`#245BC2`** | `#8FC5FF` → **`#A8C6FF`** | changed |  |
 | `app_on_primary` | `#FFFFFF` | `#0F3A63` → **`#0F2A55`** | changed |  |
 | `app_primary_container` | `#D7E8FF` → **`#E2EBFC`** | `#0F3A63` → **`#293F61`** | changed |  |
@@ -304,7 +323,7 @@ for completeness and are unchanged except where stated in §5.
 | `dev_perm_status_denied` | `#B71C1C` | `#B71C1C` | unchanged | unused (D11) |
 | `status_fix` | `#1E6B2A` → **`#17693F`** | `#81C995` → **`#7DD6A7`** | changed | alias `status_success` |
 | `status_float` | `#9A4700` → **`#8C5000`** | `#F7C66A` → **`#F2C26B`** | changed | alias `status_warning` |
-| `status_dgps` | `#155DA8` → **`#1F5AA8`** | `#9CC8FF` → **`#8CB8FF`** | changed | alias `status_info` |
+| `status_dgps` | `#155DA8` → **`#00658A`** | `#9CC8FF` → **`#7CCBEF`** | changed | alias `status_info` |
 | `status_single` | `#546E7A` → **`#515D6C`** | `#B0BEC5` → **`#C8CED8`** | changed | now alias `status_neutral` |
 | `status_no_fix` | `#BA1A1A` → **`#B3261E`** | `#FFB4AB` → **`#F29A9A`** | changed | alias `status_error` |
 | `home_right_column_bg` | `#DDE3EA` | `#252B30` | unchanged | alias `md_neutral_var_90`; unused (D11) |
@@ -355,7 +374,7 @@ for completeness and are unchanged except where stated in §5.
 | `model_viewer_canvas` | `#EEEEEE` | `#EEEEEE` | unchanged |  |
 | `model_viewer_on_canvas` | `#1A1C1E` | `#1A1C1E` | unchanged |  |
 | `model_viewer_on_canvas_error` | `#BA1A1A` | `#BA1A1A` | unchanged |  |
-| `model_viewer_on_canvas_accent` | `#1A56A4` | `#1A56A4` | unchanged | alias `md_primary_40` |
+| `model_viewer_on_canvas_accent` | `#1A56A4` → **`#245BC2`** | `#1A56A4` → **`#245BC2`** | changed |  |
 | `app_surface_container_lowest` | `—` → **`#FFFFFF`** | `—` → **`#161A23`** | changed | **new**  |
 | `app_surface_container_low` | `—` → **`#EEF2F6`** | `—` → **`#252C38`** | changed | **new**  |
 | `app_surface_dim` | `—` → **`#D9DDE4`** | `—` → **`#1B202B`** | changed | **new**  |
@@ -423,9 +442,9 @@ The `md_*` tonal resources are left untouched (several are referenced only from 
 | `colorStatusError` | `status_error` | `#BA1A1A` → **`#B3261E`** | `#FFB4AB` → **`#F29A9A`** | changed |
 | `colorStatusErrorContainer` | `status_error_container` | `#FFDAD6` → **`#FCDCDA`** | `#93000A` → **`#5E2A2D`** | changed |
 | `colorOnStatusErrorContainer` | `status_on_error_container` | `#410002` → **`#5C0B0B`** | `#FFDAD6` → **`#FCDADA`** | changed |
-| `colorStatusInfo` | `status_info` | `#155DA8` → **`#1F5AA8`** | `#9CC8FF` → **`#8CB8FF`** | changed |
-| `colorStatusInfoContainer` | `status_info_container` | `#D7E8FF` → **`#DCE7FB`** | `#0F3A63` → **`#24406A`** | changed |
-| `colorOnStatusInfoContainer` | `status_on_info_container` | `#001B44` → **`#0E2E5C`** | `#D7E8FF` → **`#D9E6FF`** | changed |
+| `colorStatusInfo` | `status_info` | `#155DA8` → **`#00658A`** | `#9CC8FF` → **`#7CCBEF`** | changed |
+| `colorStatusInfoContainer` | `status_info_container` | `#D7E8FF` → **`#CDEBF6`** | `#0F3A63` → **`#1D4A5C`** | changed |
+| `colorOnStatusInfoContainer` | `status_on_info_container` | `#001B44` → **`#002C3D`** | `#D7E8FF` → **`#C9ECFA`** | changed |
 | `colorStatusNeutral` | `status_neutral` | `#41484D` → **`#515D6C`** | `#C1C8CE` → **`#C8CED8`** | changed |
 | `colorStatusNeutralContainer` | `status_neutral_container` | `#E3E7ED` → **`#E3E7EE`** | `#2A3644` → **`#3A4252`** | changed |
 | `colorOnStatusNeutralContainer` | `status_on_neutral_container` | `#1A1C1E` → **`#202937`** | `#E2E4E7` → **`#E4E8EF`** | changed |
@@ -437,8 +456,8 @@ The `md_*` tonal resources are left untouched (several are referenced only from 
 ### 2.3 Implementation items beyond value swaps (still colour-only)
 
 Usage rules (cobalt only for interactive / selected; neutral for headings, labels, values) need colour-attribute
-reference changes in a few places. No size, weight, spacing or structure changes. The preview branch applies I-1…I-8
-(XML only); I-9, I-10 and I-12 are left for the implementation pass.
+reference changes in a few places. No size, weight, spacing or structure changes. **All items are implemented on
+`feature/graphite-cobalt-theme`.**
 
 | # | Where | Change |
 |---|---|---|
@@ -451,63 +470,53 @@ reference changes in a few places. No size, weight, spacing or structure changes
 | I-7 | `themes.xml` (both) | point the M3 error, inverse, surfaceContainerLowest/Low roles at new `app_*` resources (§2.2) and add `colorSurfaceDim` / `colorSurfaceBright` (today they fall back to Material's baseline purple-greys). PopupOverlay `colorControlHighlight` `#1A155DA8` / `#1A8FC5FF` → `@color/app_control_highlight` (`#1A245BC2` / `#1AA8C6FF`). |
 | I-8 | `dev_category_selected_bg` → `@color/nav_selected_bg`; `dev_category_selected_accent` and `coordinate_card_stroke_selected` → `@color/app_primary` (they pointed at `md_primary_90/30/40`, i.e. not the theme's cobalt). |
 | I-9 | `HomeFragment` NEUTRAL severity and `GnssStatusSheet` headline fallback use `colorPrimary` for a non-interactive status ("Connecting…") | → `colorStatusNeutral` (Kotlin attribute reference only). |
-| I-10 | `ReceiverCardBinder` colours FLOAT and DGPS with the tertiary (amber) container | FLOAT → `colorStatusWarningContainer` / on; DGPS → `colorStatusInfoContainer` / on (matches §1.5). Needs D2. |
+| I-10 | `ReceiverCardBinder` fix chip: Fix used the cobalt primary container, FLOAT and DGPS the tertiary (amber) container | FIX → `colorStatusSuccessContainer` / on, FLOAT → `colorStatusWarningContainer` / on, DGPS → `colorStatusInfoContainer` / on (matches §1.5). Colour mapping only; `CardFix` classification unchanged. The connection-state chip (Connected / Testing / Failed) is not a GNSS status and keeps its colours. |
 | I-11 | Interactive cobalt kept as is: text buttons / links, `Widget.App.Button.Primary`, switches, sliders, focus, selected list row (`primaryContainer` + 4 dp `colorPrimary` accent), `dialog_add_point` "▸ Model placement" toggle, model card edit icon, file/model picker toolbars (`colorPrimary` background with `colorOnPrimary`). | no change |
-| I-12 | Tests to update with the implementation: `PaletteContrastTest` pins `app_status_strip == #0F3554` (→ `#2A4158`); `docs/design-system.md` palette / toolbar / before-after tables; `GnssToolbarColors` KDoc mentions `#0F3554`. All other `PaletteContrastChecks` assertions pass with this palette (run on the preview branch, §4). | |
+| I-13 | `drawable/ic_more_vert_24.xml` (coordinate list ⋮, map points panel) | Root cause: white-filled vector that relied on the use site's `app:tint`; `app:tint` is only applied by the AppCompat inflater, so in any plain `LayoutInflater` context (the previews, and any non-AppCompat inflation) the dots were white on the white list row ("nearly invisible"). On the tablet the AppCompat inflater did apply it. Fix: root `android:tint="?attr/colorOnSurfaceVariant"` (6.70 light / 7.54 dark on the card, ≥ 5.0 on every surface incl. the selected row); use-site tints still override. Removed from the `HardcodedColorGuardTest` drawable allowlist (stricter). No geometry change. |
+| I-12 | Tests updated with the implementation: `PaletteContrastTest` strip pin `#0F3554` → `#2A4158` (light and night classes, the "two assertions"); new checks for app bar text, cyan info on every surface, the ⋮ tint and selected navigation; surfaceContainerLow / Lowest added to the checked surfaces; `docs/design-system.md` tables; `GnssToolbarColors` KDoc. `WcagTest` keeps `#0F3554` as a pure-maths fixture (not a palette pin). No threshold lowered. | done |
 
 ## 3. Previews (before / after)
 
-Rendered by `GraphiteCobaltPreviewTest` on `design/graphite-cobalt-preview` with Robolectric native graphics at the
-SM-X940 size (`sw924dp-w1480dp-h924dp-land-hdpi`, so the `sw600dp` / `sw600dp-w700dp` layouts are used), light and dark.
-"Before" = that commit with the current resources from `main`; "after" = the next commit with this spec's mapping.
-Real layouts and the existing preview fixtures (`ReceiverUiFixtures`, `GnssReportFixtures`, `ToolbarFitTest.buildStrip`,
-the real `SettingsCategoryAdapter`, `ReceiverCardPresenter` / `ReceiverCardBinder`, `StatusTone`); values mirror the
-reference screenshots. The Google map tile and model thumbnails are not renderable in Robolectric (blank areas).
+Rendered by the throwaway `GraphiteCobaltPreviewTest` with Robolectric native graphics at the SM-X940 size
+(`sw924dp-w1480dp-h924dp-land-hdpi`, so the `sw600dp` / `sw600dp-w700dp` layouts are used), light and dark, on `main`
+("before") and `feature/graphite-cobalt-theme` ("after"). Real layouts and the existing fixtures (`ReceiverUiFixtures`,
+`GnssReportFixtures`, `ToolbarFitTest.buildStrip`, the real `SettingsCategoryAdapter`, `ReceiverCardPresenter` /
+`ReceiverCardBinder`, `StatusTone`). Map tiles and model thumbnails are not renderable in Robolectric (blank areas).
+Output: `app/build/previews/graphite2/`, copied to the session scratchpad `graphite2/before` and `graphite2/after`.
 
-Files (each in `before/` and `after/`, `_light` and `_dark`), under
-`%TEMP%\claude\…\scratchpad\graphite\` (paths in the hand-off) and regenerable with
-`.\gradlew.bat :app:testDebugUnitTest --tests "app.surrealar.ui.theme.GraphiteCobaltPreviewTest"` (output
-`app/build/previews/graphite/`):
-
-| Screen | File stem |
+| Screen | File stem (`_light` / `_dark`; `_13x_` = font scale 1.3) |
 |---|---|
 | App bar + GNSS strip (tablet, phone) | `chrome_appbar_toolbar_1480dp`, `chrome_appbar_toolbar_411dp` |
 | GNSS strip warning pills | `chrome_toolbar_stale_corrections` (caution), `chrome_toolbar_no_fix` (critical) |
-| Home (tablet `sw600dp`: field status + coordinate settings + quick actions + survey data) | `home_tablet` |
-| Settings → Appearance (two-pane, sidebar) | `settings_appearance` |
-| Settings → Receiver (two-pane, receiver card, setup) | `settings_receiver` |
-| GNSS Status report (900 dp sheet) | `gnss_report_900dp` |
-| Coordinates list (list pane, first row selected) | `coordinates_list` |
-| Coordinate detail (badges, sections) / rows + stat tiles | `coordinates_detail`, `coordinates_detail_rows` |
-| Models list (cards with readiness badges) | `models_list` |
-
-What to look for: dark cards now separate from the page by fill (1.06 → 1.37); headings are neutral and the only blue
-left is interactive (links, buttons, switches, selected nav); the strip reads as a lighter slate band under the bar;
-status hues keep their meaning.
+| Home (tablet) | `home_tablet`, `home_tablet_13x` |
+| Settings → Appearance / → Receiver (two-pane) | `settings_appearance`, `settings_receiver` |
+| Receiver card, fix chip Fix / Float / DGPS | `receiver_card_fix_float_dgps` |
+| GNSS Status report (900 dp) | `gnss_report_900dp` |
+| Coordinates list with ⋮ (plain inflater = how the previews inflate) | `coordinates_list`, `coordinates_list_13x` |
+| Coordinates list with ⋮ (AppCompat inflater = how the app inflates) | `coordinates_list_appcompat_inflater` |
+| Coordinate detail / rows + tiles | `coordinates_detail`, `coordinates_detail_13x`, `coordinates_detail_rows` |
+| Models list | `models_list` |
 
 ## 4. Contrast report (WCAG 2.x, existing `Wcag` helper)
 
-Computed by `GraphiteCobaltContrastReportTest` on the resolved theme (Robolectric, light and `night`), before = `main`
-palette, after = this spec. Min: 4.5 normal text, 3.0 large text / meaningful graphics / control boundaries, "info" =
-reported for design judgement (fills, card borders, decorative). **No pair below its minimum after the change.**
+Computed by the throwaway `GraphiteCobaltContrastReportTest` on the resolved theme (Robolectric, light and `night`):
+before = `main` @ `fe471f9b`, after = `feature/graphite-cobalt-theme`. Min: 4.5 normal text, 3.0 large text / meaningful
+graphics / control boundaries, "info" = reported for design judgement (fills, card borders, decorative).
+**No pair is below its minimum after the change.** The committed `PaletteContrastLightTest` / `PaletteContrastNightTest`
+enforce the same roles (plus the new info, ⋮, app-bar and selected-navigation checks) and pass on the feature branch.
 
-Additionally the existing `PaletteContrastLightTest` / `PaletteContrastNightTest` (status foregrounds on every surface,
-on-container, RTK chips, onSurface at 70 % alpha, outline / primary indicators, toolbar levels, pills, AR overlays,
-charts, list selection, model-viewer canvas) were run against the proposal on the preview branch: see the result line in
-§4.3.
-
-Notes on the key pairs:
+Key pairs:
 - Cobalt button: label 6.27 (light, white on `#245BC2`) / 8.22 (dark, `#0F2A55` on `#A8C6FF`); fill vs card 6.27 / 6.92.
-- Links (colorPrimary text) ≥ 5.00 on every light surface up to `surfaceContainerHigh` and 4.68 on `surfaceContainerHighest`;
-  dark ≥ 5.60.
-- Selected navigation: fg on selected bg 5.23 (light) / 6.16 (dark). Selected bg vs sidebar is 1.00 / 1.26: the
-  selection is identified by the cobalt text + icon and, in Settings, the 4 dp cobalt accent bar (5.21 / 7.77), not by the
-  fill (D7).
-- Card borders (`outlineVariant`) are 1.49 / 1.74 on the card: non-interactive grouping, supplementary to the fill step
-  (D10). Control borders (`outline`) ≥ 3.83 (light) / 4.05 (dark).
-- Strip: every text role ≥ 5.79 on `#2A4158`; separator 3.31; critical pill fill 1.87 (edge carried by the 1 dp
-  `toolbar_error` outline, 5.79); caution pill fill 5.86; pill text 5.62 / 9.70.
-
+- Links (colorPrimary text) ≥ 5.00 on every light surface up to `surfaceContainerHigh` and 4.68 on
+  `surfaceContainerHighest`; dark ≥ 5.60.
+- Info (cyan): light ≥ 4.86, dark ≥ 5.36 on every surface (§1.4); on-container 11.77 / 7.71.
+- ⋮ overflow icon (`colorOnSurfaceVariant`): ≥ 5.01 light / ≥ 6.11 dark on every surface, 5.59 / 6.71 on the selected row.
+- Selected navigation: fg on selected bg 5.23 (light) / 6.16 (dark). Selected bg vs sidebar is 1.00 / 1.26: the selection
+  is identified by the cobalt text + icon and, in Settings, the 4 dp cobalt accent bar (5.21 / 7.77), not by the fill (D7).
+- Card borders (`outlineVariant`) 1.49 / 1.74 on the card: non-interactive grouping, supplementary to the fill step
+  (D10, kept). Control borders (`outline`) ≥ 3.83 (light) / 4.05 (dark).
+- Strip: every text role ≥ 5.79 on `#2A4158` (info 5.84); separator 3.31; critical pill fill 1.87 (edge carried by the
+  1 dp `toolbar_error` outline, 5.79); caution pill fill 5.86; pill text 5.62 / 9.70.
 
 ### 4.1 Light
 
@@ -582,13 +591,13 @@ Notes on the key pairs:
 | status_error on surfaceContainerHighest | `#BA1A1A` on `#D4DCE8` 4.68 | `#B3261E` on `#DADFE7` **4.88** | 4.5 |
 | status_on_error_container on container | `#410002` on `#FFDAD6` 13.26 | `#5C0B0B` on `#FCDCDA` **10.87** | 4.5 |
 | status_error_container fill vs card | `#FFDAD6` on `#FFFFFF` 1.29 | `#FCDCDA` on `#FFFFFF` **1.28** | info |
-| status_info on card | `#155DA8` on `#FFFFFF` 6.64 | `#1F5AA8` on `#FFFFFF` **6.80** | 4.5 |
-| status_info on page | `#155DA8` on `#F4F7FA` 6.17 | `#1F5AA8` on `#F3F5F8` **6.23** | 4.5 |
-| status_info on sidebar | `#155DA8` on `#EAF0F6` 5.78 | `#1F5AA8` on `#E8EAF0` **5.66** | 4.5 |
-| status_info on elevated | `#155DA8` on `#DFE7F0` 5.32 | `#1F5AA8` on `#E2E6EC` **5.43** | 4.5 |
-| status_info on surfaceContainerHighest | `#155DA8` on `#D4DCE8` 4.81 | `#1F5AA8` on `#DADFE7` **5.08** | 4.5 |
-| status_on_info_container on container | `#001B44` on `#D7E8FF` 13.61 | `#0E2E5C` on `#DCE7FB` **10.78** | 4.5 |
-| status_info_container fill vs card | `#D7E8FF` on `#FFFFFF` 1.24 | `#DCE7FB` on `#FFFFFF` **1.25** | info |
+| status_info on card | `#155DA8` on `#FFFFFF` 6.64 | `#00658A` on `#FFFFFF` **6.50** | 4.5 |
+| status_info on page | `#155DA8` on `#F4F7FA` 6.17 | `#00658A` on `#F3F5F8` **5.96** | 4.5 |
+| status_info on sidebar | `#155DA8` on `#EAF0F6` 5.78 | `#00658A` on `#E8EAF0` **5.41** | 4.5 |
+| status_info on elevated | `#155DA8` on `#DFE7F0` 5.32 | `#00658A` on `#E2E6EC` **5.19** | 4.5 |
+| status_info on surfaceContainerHighest | `#155DA8` on `#D4DCE8` 4.81 | `#00658A` on `#DADFE7` **4.86** | 4.5 |
+| status_on_info_container on container | `#001B44` on `#D7E8FF` 13.61 | `#002C3D` on `#CDEBF6` **11.77** | 4.5 |
+| status_info_container fill vs card | `#D7E8FF` on `#FFFFFF` 1.24 | `#CDEBF6` on `#FFFFFF` **1.25** | info |
 | status_neutral on card | `#41484D` on `#FFFFFF` 9.30 | `#515D6C` on `#FFFFFF` **6.70** | 4.5 |
 | status_neutral on page | `#41484D` on `#F4F7FA` 8.65 | `#515D6C` on `#F3F5F8` **6.14** | 4.5 |
 | status_neutral on sidebar | `#41484D` on `#EAF0F6` 8.10 | `#515D6C` on `#E8EAF0` **5.57** | 4.5 |
@@ -604,7 +613,7 @@ Notes on the key pairs:
 | toolbar_success on strip | `#81C995` on `#0F3554` 6.47 | `#7DD6A7` on `#2A4158` **6.04** | 4.5 |
 | toolbar_warning on strip | `#F7C66A` on `#0F3554` 7.99 | `#F7C66A` on `#2A4158` **6.64** | 4.5 |
 | toolbar_error on strip | `#FFAAA5` on `#0F3554` 6.97 | `#FFAAA5` on `#2A4158` **5.79** | 4.5 |
-| toolbar_info on strip | `#9CC8FF` on `#0F3554` 7.31 | `#9CC8FF` on `#2A4158` **6.07** | 4.5 |
+| toolbar_info on strip | `#9CC8FF` on `#0F3554` 7.31 | `#7CCBEF` on `#2A4158` **5.84** | 4.5 |
 | app_status_separator on strip | `#6F8598` on `#0F3554` 3.31 | `#7D93A8` on `#2A4158` **3.31** | 3.0 |
 | critical pill text on pill | `#FFFFFF` on `#C62828` 5.62 | `#FFFFFF` on `#C62828` **5.62** | 4.5 |
 | critical pill fill vs strip | `#C62828` on `#0F3554` 2.25 | `#C62828` on `#2A4158` **1.87** | info (outline carries edge) |
@@ -691,13 +700,13 @@ Notes on the key pairs:
 | status_error on surfaceContainerHighest | `#FFB4AB` on `#243042` 7.85 | `#F29A9A` on `#3C4555` **4.54** | 4.5 |
 | status_on_error_container on container | `#FFDAD6` on `#93000A` 7.24 | `#FCDADA` on `#5E2A2D` **8.77** | 4.5 |
 | status_error_container fill vs card | `#93000A` on `#101820` 1.91 | `#5E2A2D` on `#303746` **1.05** | info |
-| status_info on card | `#9CC8FF` on `#101820` 10.33 | `#8CB8FF` on `#303746` **5.92** | 4.5 |
-| status_info on page | `#9CC8FF` on `#0B1117` 10.95 | `#8CB8FF` on `#1B202B` **8.09** | 4.5 |
-| status_info on sidebar | `#9CC8FF` on `#1D2A36` 8.44 | `#8CB8FF` on `#292F3D` **6.64** | 4.5 |
-| status_info on elevated | `#9CC8FF` on `#1D2A36` 8.44 | `#8CB8FF` on `#394253` **5.01** | 4.5 |
-| status_info on surfaceContainerHighest | `#9CC8FF` on `#243042` 7.69 | `#8CB8FF` on `#3C4555` **4.79** | 4.5 |
-| status_on_info_container on container | `#D7E8FF` on `#0F3A63` 9.35 | `#D9E6FF` on `#24406A` **8.29** | 4.5 |
-| status_info_container fill vs card | `#0F3A63` on `#101820` 1.54 | `#24406A` on `#303746` **1.15** | info |
+| status_info on card | `#9CC8FF` on `#101820` 10.33 | `#7CCBEF` on `#303746` **6.61** | 4.5 |
+| status_info on page | `#9CC8FF` on `#0B1117` 10.95 | `#7CCBEF` on `#1B202B` **9.04** | 4.5 |
+| status_info on sidebar | `#9CC8FF` on `#1D2A36` 8.44 | `#7CCBEF` on `#292F3D` **7.43** | 4.5 |
+| status_info on elevated | `#9CC8FF` on `#1D2A36` 8.44 | `#7CCBEF` on `#394253` **5.60** | 4.5 |
+| status_info on surfaceContainerHighest | `#9CC8FF` on `#243042` 7.69 | `#7CCBEF` on `#3C4555` **5.36** | 4.5 |
+| status_on_info_container on container | `#D7E8FF` on `#0F3A63` 9.35 | `#C9ECFA` on `#1D4A5C` **7.71** | 4.5 |
+| status_info_container fill vs card | `#0F3A63` on `#101820` 1.54 | `#1D4A5C` on `#303746` **1.24** | info |
 | status_neutral on card | `#C1C8CE` on `#101820` 10.58 | `#C8CED8` on `#303746` **7.54** | 4.5 |
 | status_neutral on page | `#C1C8CE` on `#0B1117` 11.22 | `#C8CED8` on `#1B202B` **10.31** | 4.5 |
 | status_neutral on sidebar | `#C1C8CE` on `#1D2A36` 8.65 | `#C8CED8` on `#292F3D` **8.47** | 4.5 |
@@ -713,7 +722,7 @@ Notes on the key pairs:
 | toolbar_success on strip | `#81C995` on `#0F3554` 6.47 | `#7DD6A7` on `#2A4158` **6.04** | 4.5 |
 | toolbar_warning on strip | `#F7C66A` on `#0F3554` 7.99 | `#F7C66A` on `#2A4158` **6.64** | 4.5 |
 | toolbar_error on strip | `#FFAAA5` on `#0F3554` 6.97 | `#FFAAA5` on `#2A4158` **5.79** | 4.5 |
-| toolbar_info on strip | `#9CC8FF` on `#0F3554` 7.31 | `#9CC8FF` on `#2A4158` **6.07** | 4.5 |
+| toolbar_info on strip | `#9CC8FF` on `#0F3554` 7.31 | `#7CCBEF` on `#2A4158` **5.84** | 4.5 |
 | app_status_separator on strip | `#6F8598` on `#0F3554` 3.31 | `#7D93A8` on `#2A4158` **3.31** | 3.0 |
 | critical pill text on pill | `#FFFFFF` on `#C62828` 5.62 | `#FFFFFF` on `#C62828` **5.62** | 4.5 |
 | critical pill fill vs strip | `#C62828` on `#0F3554` 2.25 | `#C62828` on `#2A4158` **1.87** | info (outline carries edge) |
@@ -727,15 +736,6 @@ Notes on the key pairs:
 | chart_axis on drawer | `#8B9198` on `#16212B` 5.13 | `#8D97A8` on `#292F3D` **4.54** | 3.0 |
 | chart_grid on drawer (decorative) | `#41484D` on `#16212B` 1.76 | `#505B6F` on `#292F3D` **1.96** | info |
 
-### 4.3 Existing palette test against the proposal
-
-`PaletteContrastLightTest` + `PaletteContrastNightTest` on `design/graphite-cobalt-preview` @ HEAD: 30 tests, 28 pass
-(143 printed pairs per theme). The 2 failures are the same assertion in both themes, the equality pin
-`assertEquals("the strip stays #0F3554", …)`, which stops that one test before its contrast loop; the strip pairs it
-would check are all in §4.1 / §4.2 (≥ 5.79 text, separator 3.31, pills as stated) and the pin is updated with the
-implementation (I-12). The first run also caught the 70 % selected-row text at 4.48 with `#12336E`; fixed in this spec
-(`#102F66`, now 4.69 light / 5.02 dark).
-
 ## 5. Map and AR colours: intentionally unchanged
 
 Ordinary theme colours are never applied to map tiles or camera imagery. These keep their current fixed values
@@ -746,32 +746,35 @@ Ordinary theme colours are never applied to map tiles or camera imagery. These k
 | `ar_overlay_bg_dark` / `_medium` / `_heavy` (camera scrims) | `#CC000000` / `#66000000` / `#BB000000` | light-on-dark over any frame; graphite surfaces would vanish over bright frames |
 | `ar_overlay_text`, `ar_overlay_text_secondary`, `ar_overlay_label_bg`, `ar_overlay_divider`, `ar_overlay_ripple` | `#FFFFFF`, `#CCCCCC`, `#CC111111`, `#33FFFFFF`, `#40FFFFFF` | validated on the scrim over a white frame (10.2 / 6.4) |
 | `ar_overlay_model_accent` (cyan model-linked pins) | `#00E5FF` | distinct from every status hue and from cobalt; 6.6 on the pill |
-| `ar_overlay_alert` (unused), `ar_overlay_warning` / `_error` / `_info` | alias toolbar roles, unchanged values | |
-| `ar_overlay_success` | alias of `toolbar_success` → becomes `#7DD6A7` | the only AR change, inherited through the alias: brighter on the scrim (≥ 7 over white), same meaning. If AR must not move at all, point it at a literal `#81C995` instead (D8). |
+| `ar_overlay_alert` (unused), `ar_overlay_warning` / `_error` | alias toolbar roles, unchanged values | |
+| `ar_overlay_info` | alias of `toolbar_info` → `#7CCBEF` | cyan info on dark chrome; 7.0 on the chip scrim over white |
+| `ar_overlay_success` | alias of `toolbar_success` → `#7DD6A7` | approved (D8): follows the success palette; 7.25 on the chip scrim over white |
 | `map_overlay_bg`, `map_label_bg`, `map_label_text`, `map_grid_line` (light / night) | `#AAFFFFFF`, `#B3000000`, `#FFFFFF`, `#80616161` / `#80BDBDBD` | drawn over tiles; label 8.6:1 over a white tile |
 | Map polylines, accuracy circle, stakeout line, marker borders (Kotlin, guard allowlist) | fixed hues | chosen for light + satellite tiles; not themed UI |
 | User marker colours, test-cube colour | stored data | data, not theme |
-| `model_viewer_canvas` / `_on_canvas` / `_on_canvas_error` / `_on_canvas_accent` | `#EEEEEE` / `#1A1C1E` / `#BA1A1A` / `#1A56A4` | match the fixed Filament clear colour; spinner could become cobalt `#245BC2` (5.2 on the canvas) — D9 |
+| `model_viewer_canvas` / `_on_canvas` / `_on_canvas_error` | `#EEEEEE` / `#1A1C1E` / `#BA1A1A` | match the fixed Filament clear colour |
+| `model_viewer_on_canvas_accent` (spinner) | `#1A56A4` → **`#245BC2`** | approved (D9): light cobalt, 5.40 on the fixed canvas in both themes |
 | Chart constellation strokes (light / dark) | unchanged | data series, per-theme variants; all still ≥ 3.8 on the new card and drawer surfaces (D4) |
 | Coordinate-toggle thumbnail backdrop | white | transparent thumbnails need a light backdrop |
 
-Overlay changes recommended: none beyond the `ar_overlay_success` alias. Map/AR tool cards and chips already use
+Overlay changes: only the `ar_overlay_success` / `ar_overlay_info` aliases and the spinner (approved). Map/AR tool cards and chips already use
 the dark scrims and keep them; the AR/Map screens' app bar uses `app_top_app_bar` and so picks up the new bar colour
 (`fragment_render_map` top bar, `activity_model_viewer` toolbar) with white text (12.5 / 16.5).
 
-## 6. Open decisions (need approval before implementation)
+## 6. Decisions (resolved 2026-11-26)
 
-| # | Decision | Proposal in this spec | Alternatives |
-|---|---|---|---|
-| D1 | **Secondary role.** Today teal (`#00796B` / `#79D7C9`), used by the Home "Models" row (icon, count, View chip), the pin sheet, swipe-refresh. | Slate graphite `#4A5A70` / `#B9C5D6`, and the Models row moves to neutral text + a cobalt View chip (I-1). | Keep teal as an accent for models only. |
-| D2 | **Tertiary role** (amber; receiver card FLOAT/DGPS chip, coordinate settings accent). | Unchanged values. | Remove tertiary and use the warning / info status containers (see I-10). |
-| D3 | **Info vs cobalt.** Info `#1F5AA8` / `#8CB8FF` is close to cobalt `#245BC2` / `#A8C6FF`. | Keep (DGPS text is non-interactive and always labelled). | Shift info toward cyan (e.g. light `#00658A`, dark `#7CCBEF`) to separate it from links. |
-| D4 | **Chart constellation hues.** | Unchanged (pass on new surfaces). | Re-tune the light set to graphite-friendly hues. |
-| D5 | **Status-bar colour.** Themes set `android:statusBarColor = app_top_app_bar`, but on the SM-X940 (Android 15+, edge-to-edge) the system bar shows a light blue (`colorPrimary`-like) area above the app bar in both screenshots. | Implement the bar colour as a status-bar-inset background on the app bar (window insets) so the system bar matches `#23354B` / `#171F2D`. This touches `MainActivity` inset handling, so it needs separate approval. | Leave as is. |
-| D6 | **Launcher / brand artwork** (`ic_launcher_*`, `#020B1A` background). | Unchanged. | Refresh to graphite/cobalt later. |
-| D7 | **Selected rows.** Coordinate list selection uses primaryContainer `#E2EBFC` / `#293F61` + a 4 dp cobalt accent; settings sidebar uses the same fill + accent; drawer pill has fill + cobalt text only. Fill vs sidebar is ~1.0–1.3:1 (identification relies on the cobalt text/icon and the accent bar). | Keep (no layout change). | Add a 4 dp accent to the drawer pill (layout change, out of scope) or darken the pill. |
-| D8 | `ar_overlay_success` follows `toolbar_success`. | Follow (one success hue on dark chrome). | Freeze AR at `#81C995`. |
-| D9 | Model-viewer spinner `#1A56A4` → cobalt `#245BC2`? | Keep (fixed canvas exception). | Align to cobalt (5.2 on `#EEEEEE`). |
-| D10 | **Card borders in dark mode.** `#505B6F` is 1.74:1 on the card and 2.38:1 on the page — visible but quiet (brief: no bright outlines). Cards are non-interactive groupings; their boundary is supplementary (fill step 1.37 + border), so WCAG 1.4.11 does not require 3:1. Controls (text fields, switches, outlined buttons) use `colorOutline` ≥ 3:1. | Keep borders in both modes at outlineVariant. | Drop card borders in dark and rely on the fill step; or raise to ≥ 3:1 (`#6E7A90`, brighter than the brief wants). |
-| D11 | Unused colour resources (`md_*` tonal steps not referenced, `dev_info_*`, `dev_perm_*`, `coordinate_row_*`, `chip_*`, `home_right_column_bg`, `card_stroke_light`, `ar_overlay_alert`, `app_on_status_strip`…). | Leave values unchanged in this pass. | Delete in a separate cleanup. |
-| D12 | GNSS strip tweak. | Keep `#2A4158` (lowest strip text role is `toolbar_error` at 5.79). | `#263B51` would add ~10 % margin to every strip role while staying lighter than the light app bar's hue family; not needed for AA. |
+| # | Decision | Outcome |
+|---|---|---|
+| D1 | Secondary role | **Approved**: slate `#4A5A70` / `#B9C5D6`; Home Models row neutral + cobalt View chip. |
+| D2 | Tertiary (amber) | Kept as proposed (unchanged values). The receiver fix chip no longer uses it (I-10); coordinate-settings accent still does. |
+| D3 | Info vs cobalt | **Adjusted**: cyan info `#00658A` / `#7CCBEF` with containers `#CDEBF6`/`#002C3D`, `#1D4A5C`/`#C9ECFA`; `toolbar_info` / `ar_overlay_info` follow. |
+| D4 | Chart constellation hues | Unchanged (user: do not change). |
+| D5 | System status-bar colour on edge-to-edge Android | **Deferred** to a separate task; no window-inset change here. |
+| D6 | Launcher artwork | Unchanged (user: do not change). |
+| D7 | Selected rows / nav pill fill vs sidebar (1.00 / 1.26) | As proposed: identified by cobalt text + icon and the settings accent bar. |
+| D8 | AR success | **Approved**: follows `toolbar_success` `#7DD6A7`. |
+| D9 | Model-viewer spinner | **Approved**: `#245BC2` (5.40 on the canvas). |
+| D10 | Card borders | **Kept** subtle graphite outlineVariant in both modes. |
+| D11 | Unused colour resources | Left unchanged (separate cleanup). |
+| D12 | Darker strip `#263B51` | **Rejected**: strip stays `#2A4158`. |
+| — | ⋮ overflow icon nearly invisible (light preview) | **Fixed** (I-13). |
