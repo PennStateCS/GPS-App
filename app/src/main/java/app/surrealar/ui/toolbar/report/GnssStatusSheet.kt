@@ -141,7 +141,7 @@ class GnssStatusSheet : BottomSheetDialogFragment() {
         val ctx = container.context
         v.findViewById<TextView>(R.id.gnss_report_headline).apply {
             setIfChanged(r.headline)
-            setTextColor(levelColor(this, r.level, androidx.appcompat.R.attr.colorPrimary))
+            setTextColor(levelColor(this, r.level, R.attr.colorStatusNeutral))
         }
         v.findViewById<TextView>(R.id.gnss_report_warnings).apply {
             val text = r.warnings.drop(1).takeIf { it.isNotEmpty() }?.joinToString(" · ", prefix = "Also: ")

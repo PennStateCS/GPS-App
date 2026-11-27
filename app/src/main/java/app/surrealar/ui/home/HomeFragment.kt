@@ -507,7 +507,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         status: HomeFieldStatusMapper.FieldStatus,
     ) {
         // Headline: neutral severity reads as the brand primary (calm "waiting"/"internal" states).
-        val headlineColor = severityColor(b.root, status.severity, androidx.appcompat.R.attr.colorPrimary)
+        val headlineColor = severityColor(b.root, status.severity, R.attr.colorStatusNeutral)
         b.textFieldStatusHeadline.text = status.headline
         b.textFieldStatusHeadline.setTextColor(headlineColor)
         // Other warnings that apply are spelled out (never only a colour or a chip).
