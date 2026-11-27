@@ -55,7 +55,7 @@
                     android:paddingBottom="8dp"
                     android:text="Developer Mode"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Enable Developer Tools row -->
                 <LinearLayout

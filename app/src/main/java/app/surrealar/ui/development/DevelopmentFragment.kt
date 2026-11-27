@@ -1223,7 +1223,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val header = TextView(ctx).apply {
             text = sectionTitle
             setTextAppearance(R.style.TextAppearance_App_CardSectionLabel)
-            setTextColor(resolveAttrColor(ctx, androidx.appcompat.R.attr.colorPrimary))
+            setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
             setPadding(dp(20f), dp(16f), dp(20f), dp(8f))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }

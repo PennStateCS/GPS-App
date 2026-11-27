@@ -63,7 +63,7 @@
                 android:paddingBottom="8dp"
                 android:text="@string/dev_section_actions"
                 android:textAppearance="?attr/textAppearanceLabelLarge"
-                android:textColor="?attr/colorPrimary" />
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <LinearLayout
                 android:layout_width="match_parent"

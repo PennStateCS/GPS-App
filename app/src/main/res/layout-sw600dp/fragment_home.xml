@@ -56,7 +56,7 @@
                                 android:layout_height="20dp"
                                 android:src="@drawable/ic_section_location"
                                 android:layout_marginEnd="8dp"
-                                app:tint="?attr/colorPrimary" />
+                                app:tint="?attr/colorOnSurfaceVariant" />
 
                             <TextView
                                 android:layout_width="0dp"
@@ -64,7 +64,7 @@
                                 android:layout_weight="1"
                                 android:text="Current Location"
                                 android:textAppearance="?attr/textAppearanceLabelLarge"
-                                android:textColor="?attr/colorPrimary" />
+                                android:textColor="?attr/colorOnSurface" />
 
                             <!-- Header action: opens the full Map page (same destination as the
                                  Quick Actions "Open Map" chip). Kept in the header so it never
@@ -227,7 +227,7 @@
                                 android:src="@drawable/ic_satellite_24"
                                 android:layout_marginEnd="8dp"
                                 android:contentDescription="@null"
-                                app:tint="?attr/colorPrimary" />
+                                app:tint="?attr/colorOnSurfaceVariant" />
 
                             <TextView
                                 android:layout_width="0dp"
@@ -235,7 +235,7 @@
                                 android:layout_weight="1"
                                 android:text="Field Status"
                                 android:textAppearance="?attr/textAppearanceLabelLarge"
-                                android:textColor="?attr/colorPrimary" />
+                                android:textColor="?attr/colorOnSurface" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_field_status_action"
@@ -373,7 +373,7 @@
                                 android:src="@drawable/ic_list_coordinates"
                                 android:layout_marginEnd="8dp"
                                 android:contentDescription="@null"
-                                app:tint="?attr/colorPrimary" />
+                                app:tint="?attr/colorOnSurfaceVariant" />
 
                             <TextView
                                 android:layout_width="0dp"
@@ -382,7 +382,7 @@
                                 android:accessibilityHeading="true"
                                 android:text="@string/home_coordinate_settings_title"
                                 android:textAppearance="?attr/textAppearanceLabelLarge"
-                                android:textColor="?attr/colorPrimary" />
+                                android:textColor="?attr/colorOnSurface" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_coordinate_settings_change"
@@ -454,7 +454,7 @@
                                 android:layout_height="20dp"
                                 android:src="@drawable/ic_tune_24"
                                 android:layout_marginEnd="8dp"
-                                app:tint="?attr/colorPrimary" />
+                                app:tint="?attr/colorOnSurfaceVariant" />
 
                             <TextView
                                 android:layout_width="0dp"
@@ -462,7 +462,7 @@
                                 android:layout_weight="1"
                                 android:text="Quick Actions"
                                 android:textAppearance="?attr/textAppearanceLabelLarge"
-                                android:textColor="?attr/colorPrimary" />
+                                android:textColor="?attr/colorOnSurface" />
 
                         </LinearLayout>
 
@@ -552,7 +552,7 @@
                                 android:layout_height="20dp"
                                 android:src="@drawable/ic_section_data"
                                 android:layout_marginEnd="8dp"
-                                app:tint="?attr/colorPrimary" />
+                                app:tint="?attr/colorOnSurfaceVariant" />
 
                             <TextView
                                 android:layout_width="0dp"
@@ -560,7 +560,7 @@
                                 android:layout_weight="1"
                                 android:text="Survey Data"
                                 android:textAppearance="?attr/textAppearanceLabelLarge"
-                                android:textColor="?attr/colorPrimary" />
+                                android:textColor="?attr/colorOnSurface" />
 
                         </LinearLayout>
 
@@ -577,7 +577,7 @@
                                 android:layout_height="20dp"
                                 android:src="@drawable/ic_list_coordinates"
                                 android:layout_marginEnd="12dp"
-                                app:tint="?attr/colorPrimary" />
+                                app:tint="?attr/colorOnSurfaceVariant" />
 
                             <TextView
                                 android:layout_width="0dp"
@@ -595,7 +595,7 @@
                                 android:text="0"
                                 android:textAppearance="@style/TextAppearance.App.SectionHeading"
                                 android:layout_marginEnd="12dp"
-                                android:textColor="?attr/colorPrimary" />
+                                android:textColor="?attr/colorOnSurface" />
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/chip_view_coordinates"
@@ -627,7 +627,7 @@
                                 android:layout_height="20dp"
                                 android:src="@drawable/ic_models_24"
                                 android:layout_marginEnd="12dp"
-                                app:tint="?attr/colorSecondary" />
+                                app:tint="?attr/colorOnSurfaceVariant" />
 
                             <TextView
                                 android:layout_width="0dp"
@@ -645,7 +645,7 @@
                                 android:text="0"
                                 android:textAppearance="@style/TextAppearance.App.SectionHeading"
                                 android:layout_marginEnd="12dp"
-                                android:textColor="?attr/colorSecondary" />
+                                android:textColor="?attr/colorOnSurface" />
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/chip_view_models"
@@ -653,9 +653,9 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="View"
-                                android:textColor="?attr/colorOnSecondary"
+                                android:textColor="?attr/colorOnPrimary"
                                 android:textAppearance="?attr/textAppearanceBodyMedium"
-                                app:chipBackgroundColor="?attr/colorSecondary" />
+                                app:chipBackgroundColor="?attr/colorPrimary" />
 
                         </LinearLayout>
 

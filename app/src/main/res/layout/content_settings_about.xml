@@ -55,7 +55,7 @@
                     android:paddingBottom="8dp"
                     android:text="App Version"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- App name row -->
                 <LinearLayout
@@ -307,7 +307,7 @@
                     android:paddingBottom="8dp"
                     android:text="Diagnostics"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <LinearLayout
                     android:layout_width="match_parent"

@@ -55,7 +55,7 @@
                     android:paddingBottom="8dp"
                     android:text="Theme"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Theme Mode row -->
                 <LinearLayout
@@ -139,7 +139,7 @@
                     android:paddingBottom="8dp"
                     android:text="Status Bar"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Show live GNSS status bar row -->
                 <LinearLayout
@@ -209,7 +209,7 @@
                     android:paddingBottom="8dp"
                     android:text="Field Display"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Keep screen awake row -->
                 <LinearLayout

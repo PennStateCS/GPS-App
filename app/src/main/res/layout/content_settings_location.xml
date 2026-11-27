@@ -68,7 +68,7 @@
                     android:paddingBottom="2dp"
                     android:text="@string/receiver_setup_title"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Phase 4 WP C: RS4 / RS4 Pro tilt — Emlid Flow's compensated NMEA output and live tilt status.
                      Never moved into Advanced: it decides whether captures subtract the pole height. -->
@@ -242,7 +242,7 @@
                         android:paddingBottom="8dp"
                         android:text="Internal GPS"
                         android:textAppearance="?attr/textAppearanceLabelLarge"
-                        android:textColor="?attr/colorPrimary" />
+                        android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <!-- Tablet / internal-GNSS antenna height. Set when the tablet is pole/bracket
                          mounted at a known height; subtracted from internal-GPS captured altitude.
@@ -340,7 +340,7 @@
                             android:accessibilityHeading="true"
                             android:text="@string/receiver_advanced_title"
                             android:textAppearance="?attr/textAppearanceLabelLarge"
-                            android:textColor="?attr/colorPrimary" />
+                            android:textColor="?attr/colorOnSurfaceVariant" />
 
                         <TextView
                             android:layout_width="match_parent"

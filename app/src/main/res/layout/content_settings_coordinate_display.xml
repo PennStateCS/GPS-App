@@ -55,7 +55,7 @@
                     android:paddingBottom="8dp"
                     android:text="Coordinate System"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -505,7 +505,7 @@
                     android:paddingBottom="8dp"
                     android:text="Status Indicators"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Show Accuracy Indicators row -->
                 <LinearLayout
@@ -570,7 +570,7 @@
                     android:paddingBottom="8dp"
                     android:text="Coordinate Naming"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Default Name Prefix row -->
                 <LinearLayout
