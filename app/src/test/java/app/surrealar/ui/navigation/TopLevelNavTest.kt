@@ -21,4 +21,13 @@ class TopLevelNavTest {
         assertTrue(opts.shouldLaunchSingleTop())
         assertTrue(opts.shouldRestoreState())
     }
+
+    @Test
+    fun `jumps with arguments pop to start but never restore stale state`() {
+        val opts = topLevelNavOptionsWithArgs(42)
+        assertEquals(42, opts.popUpToId)
+        assertFalse(opts.isPopUpToInclusive())
+        assertTrue(opts.shouldLaunchSingleTop())
+        assertFalse("a restored copy would ignore the new arguments", opts.shouldRestoreState())
+    }
 }
