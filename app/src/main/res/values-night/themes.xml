@@ -6,14 +6,14 @@
     -->
     <style name="Theme.SurveyingApp" parent="Theme.Material3.DayNight.NoActionBar">
 
-        <!-- ── Primary: Blue (dark) ───────────────────────────────────────── -->
+        <!-- ── Primary: Cobalt (dark) ─────────────────────────────────────── -->
         <item name="colorPrimary">@color/app_primary</item>
         <item name="colorOnPrimary">@color/app_on_primary</item>
         <item name="colorPrimaryContainer">@color/app_primary_container</item>
         <item name="colorOnPrimaryContainer">@color/app_on_primary_container</item>
-        <item name="colorPrimaryInverse">@color/md_primary_40</item>
+        <item name="colorPrimaryInverse">@color/app_inverse_primary</item>
 
-        <!-- ── Secondary: Teal (dark) ─────────────────────────────────────── -->
+        <!-- ── Secondary: Slate (dark) ────────────────────────────────────── -->
         <item name="colorSecondary">@color/app_secondary</item>
         <item name="colorOnSecondary">@color/app_on_secondary</item>
         <item name="colorSecondaryContainer">@color/app_secondary_container</item>
@@ -26,26 +26,28 @@
         <item name="colorOnTertiaryContainer">@color/md_tertiary_90</item>
 
         <!-- ── Error (dark) ───────────────────────────────────────────────── -->
-        <item name="colorError">@color/md_error_80</item>
-        <item name="colorOnError">@color/md_error_20</item>
-        <item name="colorErrorContainer">@color/md_error_30</item>
-        <item name="colorOnErrorContainer">@color/md_error_90</item>
+        <item name="colorError">@color/app_error</item>
+        <item name="colorOnError">@color/app_on_error</item>
+        <item name="colorErrorContainer">@color/app_error_container</item>
+        <item name="colorOnErrorContainer">@color/app_on_error_container</item>
 
         <!-- ── Surfaces (dark) ────────────────────────────────────────────── -->
         <item name="colorSurface">@color/app_surface</item>
         <item name="colorOnSurface">@color/app_on_surface</item>
         <item name="colorSurfaceVariant">@color/app_surface_variant</item>
         <item name="colorOnSurfaceVariant">@color/app_on_surface_variant</item>
-        <item name="colorSurfaceInverse">@color/md_neutral_90</item>
-        <item name="colorOnSurfaceInverse">@color/md_neutral_20</item>
+        <item name="colorSurfaceInverse">@color/app_inverse_surface</item>
+        <item name="colorOnSurfaceInverse">@color/app_inverse_on_surface</item>
 
         <!-- ── Surface Containers (dark) ─────────────────────────────────── -->
         <!-- Explicitly defined to prevent fallback to M3's default purple palette. -->
-        <item name="colorSurfaceContainerLowest">@color/md_surface_container_lowest</item>
-        <item name="colorSurfaceContainerLow">@color/md_surface_container_low</item>
+        <item name="colorSurfaceContainerLowest">@color/app_surface_container_lowest</item>
+        <item name="colorSurfaceContainerLow">@color/app_surface_container_low</item>
         <item name="colorSurfaceContainer">@color/app_surface_container</item>
         <item name="colorSurfaceContainerHigh">@color/app_surface_container_high</item>
         <item name="colorSurfaceContainerHighest">@color/app_surface_container_highest</item>
+        <item name="colorSurfaceDim">@color/app_surface_dim</item>
+        <item name="colorSurfaceBright">@color/app_surface_bright</item>
 
         <!-- ── Background (dark) ──────────────────────────────────────────── -->
         <item name="android:colorBackground">@color/app_background</item>
@@ -107,7 +109,7 @@
         <item name="colorSurfaceContainerHigh">@color/app_surface_container_high</item>
         <item name="colorSurfaceContainerHighest">@color/app_surface_container_highest</item>
         <item name="android:colorBackground">@color/app_surface_container_high</item>
-        <item name="colorControlHighlight">#1A8FC5FF</item>
+        <item name="colorControlHighlight">@color/app_control_highlight</item>
         <item name="android:textColorPrimary">@color/app_on_surface</item>
         <item name="android:textColorSecondary">@color/app_on_surface_variant</item>
     </style>

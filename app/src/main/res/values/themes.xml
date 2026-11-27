@@ -4,20 +4,21 @@
         Parent: Theme.Material3.DayNight.NoActionBar
         All activities manage their own Toolbar; the window ActionBar is always disabled.
 
-        Palette: Deep Blue primary / Teal secondary / Amber tertiary.
+        Palette: Graphite & Cobalt (docs/design/graphite-cobalt-spec.md): graphite surfaces,
+        cobalt primary for interactive / selected only, slate secondary, amber tertiary.
         Designed for a professional field/surveying context.
         Tonal values derived from M3 tonal palette conventions (T40 for light, T80 for dark).
     -->
     <style name="Theme.SurveyingApp" parent="Theme.Material3.DayNight.NoActionBar">
 
-        <!-- ── Primary: Professional Blue ────────────────────────────────── -->
+        <!-- ── Primary: Cobalt ───────────────────────────────────────────── -->
         <item name="colorPrimary">@color/app_primary</item>
         <item name="colorOnPrimary">@color/app_on_primary</item>
         <item name="colorPrimaryContainer">@color/app_primary_container</item>
         <item name="colorOnPrimaryContainer">@color/app_on_primary_container</item>
-        <item name="colorPrimaryInverse">@color/md_primary_80</item>
+        <item name="colorPrimaryInverse">@color/app_inverse_primary</item>
 
-        <!-- ── Secondary: GNSS/Success Teal ──────────────────────────────── -->
+        <!-- ── Secondary: Slate graphite ─────────────────────────────────── -->
         <item name="colorSecondary">@color/app_secondary</item>
         <item name="colorOnSecondary">@color/app_on_secondary</item>
         <item name="colorSecondaryContainer">@color/app_secondary_container</item>
@@ -30,27 +31,29 @@
         <item name="colorOnTertiaryContainer">@color/md_tertiary_10</item>
 
         <!-- ── Error ──────────────────────────────────────────────────────── -->
-        <item name="colorError">@color/md_error_40</item>
-        <item name="colorOnError">@color/md_error_100</item>
-        <item name="colorErrorContainer">@color/md_error_90</item>
-        <item name="colorOnErrorContainer">@color/md_error_10</item>
+        <item name="colorError">@color/app_error</item>
+        <item name="colorOnError">@color/app_on_error</item>
+        <item name="colorErrorContainer">@color/app_error_container</item>
+        <item name="colorOnErrorContainer">@color/app_on_error_container</item>
 
         <!-- ── Surfaces ───────────────────────────────────────────────────── -->
         <item name="colorSurface">@color/app_surface</item>
         <item name="colorOnSurface">@color/app_on_surface</item>
         <item name="colorSurfaceVariant">@color/app_surface_variant</item>
         <item name="colorOnSurfaceVariant">@color/app_on_surface_variant</item>
-        <item name="colorSurfaceInverse">@color/md_neutral_20</item>
-        <item name="colorOnSurfaceInverse">@color/md_neutral_95</item>
+        <item name="colorSurfaceInverse">@color/app_inverse_surface</item>
+        <item name="colorOnSurfaceInverse">@color/app_inverse_on_surface</item>
 
         <!-- ── Surface Containers ─────────────────────────────────────────── -->
         <!-- Explicitly defined to prevent fallback to M3's default purple palette. -->
         <!-- colorSurfaceContainerHigh is the dropdown/menu/dialog popup background. -->
-        <item name="colorSurfaceContainerLowest">@color/md_surface_container_lowest</item>
-        <item name="colorSurfaceContainerLow">@color/md_surface_container_low</item>
+        <item name="colorSurfaceContainerLowest">@color/app_surface_container_lowest</item>
+        <item name="colorSurfaceContainerLow">@color/app_surface_container_low</item>
         <item name="colorSurfaceContainer">@color/app_surface_container</item>
         <item name="colorSurfaceContainerHigh">@color/app_surface_container_high</item>
         <item name="colorSurfaceContainerHighest">@color/app_surface_container_highest</item>
+        <item name="colorSurfaceDim">@color/app_surface_dim</item>
+        <item name="colorSurfaceBright">@color/app_surface_bright</item>
 
         <!-- ── Background ─────────────────────────────────────────────────── -->
         <item name="android:colorBackground">@color/app_background</item>
@@ -159,7 +162,7 @@
         <!-- Window background used by older popup path and AppCompat fallback -->
         <item name="android:colorBackground">@color/app_surface_container_high</item>
         <!-- Ripple / pressed overlay – 10 % primary blue -->
-        <item name="colorControlHighlight">#1A155DA8</item>
+        <item name="colorControlHighlight">@color/app_control_highlight</item>
         <!-- Text -->
         <item name="android:textColorPrimary">@color/app_on_surface</item>
         <item name="android:textColorSecondary">@color/app_on_surface_variant</item>

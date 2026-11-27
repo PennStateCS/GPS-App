@@ -8,64 +8,64 @@
     -->
 
     <!-- App semantic colors – dark overrides -->
-    <!-- Top app bar stays the darkest layer; status strip is a lighter blue-navy band above it.
+    <!-- Top app bar stays the darkest layer; status strip is a lighter slate band (#2A4158, same as light).
          on-strip roles mirror light mode (value near-white, label soft blue-gray, subtle separator)
          since the strip background is dark in both themes. -->
-    <color name="app_top_app_bar">#07121E</color>
+    <color name="app_top_app_bar">#171F2D</color>
     <color name="app_on_top_app_bar">#FFFFFF</color>
-    <color name="app_status_strip">#0F3554</color>
-    <color name="app_status_separator">#6F8598</color>
+    <color name="app_status_strip">#2A4158</color>
+    <color name="app_status_separator">#7D93A8</color>
 
     <!-- Semantic status roles – night. Foregrounds are light tones (≥ 6.8:1 on every dark surface
          up to surface_container_highest); containers are deep tones with light on-container text.
          Old values failed: error #D32F2F 3.6:1 and info #1976D2 3.9:1 on #101820.
          app_success/app_warning/app_error/app_info alias these from values/colors.xml. -->
-    <color name="status_success">#81C995</color>
-    <color name="status_success_container">#1E4D2B</color>
-    <color name="status_on_success_container">#C8F0D0</color>
-    <color name="status_warning">#F7C66A</color>
-    <color name="status_warning_container">#5D4100</color>
-    <color name="status_on_warning_container">#FFDEA8</color>
-    <color name="status_error">#FFB4AB</color>
-    <color name="status_error_container">#93000A</color>
-    <color name="status_on_error_container">#FFDAD6</color>
-    <color name="status_info">#9CC8FF</color>
-    <color name="status_info_container">#0F3A63</color>
-    <color name="status_on_info_container">#D7E8FF</color>
-    <color name="status_neutral">#C1C8CE</color>
-    <color name="status_neutral_container">#2A3644</color>
-    <color name="status_on_neutral_container">#E2E4E7</color>
+    <color name="status_success">#7DD6A7</color>
+    <color name="status_success_container">#1F4A36</color>
+    <color name="status_on_success_container">#C9F2DC</color>
+    <color name="status_warning">#F2C26B</color>
+    <color name="status_warning_container">#54401A</color>
+    <color name="status_on_warning_container">#FCE4B4</color>
+    <color name="status_error">#F29A9A</color>
+    <color name="status_error_container">#5E2A2D</color>
+    <color name="status_on_error_container">#FCDADA</color>
+    <color name="status_info">#7CCBEF</color>
+    <color name="status_info_container">#1D4A5C</color>
+    <color name="status_on_info_container">#C9ECFA</color>
+    <color name="status_neutral">#C8CED8</color>
+    <color name="status_neutral_container">#3A4252</color>
+    <color name="status_on_neutral_container">#E4E8EF</color>
 
     <!-- RTK / GNSS status chips – night (light on dark; previously no override: #2E7D32 was 3.5:1) -->
-    <color name="status_single">#B0BEC5</color>
-    <color name="app_primary">#8FC5FF</color>
-    <color name="app_on_primary">#0F3A63</color>
-    <color name="app_primary_container">#0F3A63</color>
-    <color name="app_on_primary_container">#D7E8FF</color>
-    <color name="app_secondary">#79D7C9</color>
-    <color name="app_on_secondary">#003731</color>
-    <color name="app_secondary_container">#00534A</color>
-    <color name="app_on_secondary_container">#BCEDE4</color>
-    <color name="app_background">#0B1117</color>
-    <color name="app_on_background">#E2E4E7</color>
-    <color name="app_surface">#101820</color>
-    <color name="app_on_surface">#E2E4E7</color>
-    <color name="app_surface_variant">#1D2A36</color>
-    <color name="app_on_surface_variant">#C1C8CE</color>
-    <color name="app_surface_container">#16212B</color>
-    <color name="app_surface_container_high">#1D2A36</color>
-    <color name="app_surface_container_highest">#243042</color>
-    <color name="app_outline">#8B9198</color>
-    <color name="app_outline_variant">#334454</color>
+    <color name="status_single">@color/status_neutral</color>
+    <color name="app_primary">#A8C6FF</color>
+    <color name="app_on_primary">#0F2A55</color>
+    <color name="app_primary_container">#293F61</color>
+    <color name="app_on_primary_container">#D9E5FF</color>
+    <color name="app_secondary">#B9C5D6</color>
+    <color name="app_on_secondary">#1C2533</color>
+    <color name="app_secondary_container">#3A4658</color>
+    <color name="app_on_secondary_container">#DCE3ED</color>
+    <color name="app_background">#1B202B</color>
+    <color name="app_on_background">#F0F2F7</color>
+    <color name="app_surface">#303746</color>
+    <color name="app_on_surface">#F0F2F7</color>
+    <color name="app_surface_variant">#292F3D</color>
+    <color name="app_on_surface_variant">#C8CED8</color>
+    <color name="app_surface_container">#292F3D</color>
+    <color name="app_surface_container_high">#394253</color>
+    <color name="app_surface_container_highest">#3C4555</color>
+    <color name="app_outline">#8D97A8</color>
+    <color name="app_outline_variant">#505B6F</color>
 
     <!-- Coordinate list / card – darker stripe for night -->
     <color name="coordinate_row_even">#FF1E2024</color>
     <color name="coordinate_row_odd">#FF252A2E</color>
-    <color name="coordinate_list_bg">#FF1A1C1E</color>
+    <color name="coordinate_list_bg">@color/app_background</color>
 
     <!-- Developer panel – night versions -->
     <color name="dev_panel_bg">#FF1E2124</color>
-    <color name="dev_category_selected_bg">@color/md_primary_30</color>
+    <color name="dev_category_selected_bg">@color/nav_selected_bg</color>
     <color name="dev_info_label">#FFCACFD4</color>
     <color name="dev_info_value">#FFE2E4E7</color>
     <color name="dev_info_section_bg">#FF1E2124</color>
@@ -82,9 +82,9 @@
     <color name="map_grid_line">#80BDBDBD</color>
 
     <!-- GNSS / satellite chart – night -->
-    <color name="chart_axis">#FF8B9198</color>
-    <color name="chart_grid">#FF41484D</color>
-    <color name="chart_text">#FFE2E4E7</color>
+    <color name="chart_axis">#8D97A8</color>
+    <color name="chart_grid">#505B6F</color>
+    <color name="chart_text">#F0F2F7</color>
     <color name="chart_title">#FFFFFFFF</color>
     <color name="chart_bar_unused">#FF8B9198</color>
     <color name="chart_used_halo">#FFFFFFFF</color>
@@ -98,11 +98,11 @@
     <color name="chart_constellation_other">#C0C0C0</color>
 
     <!-- Stat card backgrounds (bg_rounded_card / bg_rounded_light) – night -->
-    <color name="stat_card_bg">@color/md_surface_container_high</color>
-    <color name="stat_card_stroke">#3D4349</color>
+    <color name="stat_card_bg">@color/app_surface</color>
+    <color name="stat_card_stroke">@color/app_outline_variant</color>
 
     <!-- Navigation drawer selected pill – dark blue tone for night -->
-    <color name="nav_selected_bg">@color/md_primary_30</color>
+    <color name="nav_selected_bg">#293F61</color>
 
     <!-- Surface Container family (dark) – deep blue-gray, overrides M3 purple defaults -->
     <color name="md_surface_container_lowest">#0B1017</color>  <!-- below background         -->
@@ -110,5 +110,18 @@
     <color name="md_surface_container">#162029</color>         <!-- modal / sheet base       -->
     <color name="md_surface_container_high">#1D2836</color>    <!-- dropdown / menu surface  -->
     <color name="md_surface_container_highest">#243042</color> <!-- chips / pressed state    -->
+
+    <!-- Graphite & Cobalt (preview): new roles -->
+    <color name="app_surface_container_lowest">#161A23</color>
+    <color name="app_surface_container_low">#252C38</color>
+    <color name="app_surface_dim">#1B202B</color>
+    <color name="app_surface_bright">#424B5D</color>
+    <color name="app_inverse_surface">#E4E8EF</color>
+    <color name="app_inverse_on_surface">#2A303C</color>
+    <color name="app_inverse_primary">#245BC2</color>
+    <color name="app_on_error">#5C0B0B</color>
+    <color name="app_error_container">#5E2A2D</color>
+    <color name="app_on_error_container">#FCDADA</color>
+    <color name="app_control_highlight">#1AA8C6FF</color>
 
 </resources>
